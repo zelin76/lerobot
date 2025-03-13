@@ -146,7 +146,7 @@ from lerobot.common.robot_devices.control_utils import (
     stop_recording,
     warmup_record,
 )
-from lerobot.common.robot_devices.robots.signal_arm import FairinoRobot
+from lerobot.common.robot_devices.robots.fr3_robot import FairinoRobot
 from lerobot.common.robot_devices.robots.utils import Robot, make_robot_from_config
 from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
 from lerobot.common.utils.utils import has_method, init_logging, log_say
@@ -166,7 +166,7 @@ def teleoperate(robot: Robot, cfg: TeleoperateControlConfig):
         control_time_s=cfg.teleop_time_s,
         fps=cfg.fps,
         teleoperate=True,  # 启用遥操作模式
-        display_cameras=True,  # 是否显示摄像头画面
+        display_cameras=False,  # 是否显示摄像头画面
     )
 
 
@@ -203,22 +203,19 @@ def record(
             image_writer_processes=cfg.num_image_writer_processes,
             image_writer_threads=cfg.num_image_writer_threads_per_camera * len(robot.cameras),
         )
-        print("creat dataset .....")
 
     # 加载预训练策略（如果有）
     policy = None if cfg.policy is None else make_policy(cfg.policy, cfg.device, ds_meta=dataset.meta)
 
     if not robot.is_connected:
         robot.connect()
-    print("listener key board .....")
     # 初始化键盘监听（用于控制录制流程）
     listener, events = init_keyboard_listener()
-    print("listener key board .....")
     # 录制前热身阶段（调整起始位置/设备同步）
     enable_teleoperation = policy is None
-    log_say("准备开始录制", cfg.play_sounds)
+    log_say("回到初始位置", cfg.play_sounds)
     warmup_record(robot, events, enable_teleoperation, cfg.warmup_time_s, cfg.display_cameras, cfg.fps)
-
+    log_say("准备开始录制", cfg.play_sounds)
     if has_method(robot, "teleop_safety_stop"):
         robot.teleop_safety_stop()  # 安全停止检查
 
@@ -273,10 +270,6 @@ def record(
 
     dataset.consolidate(cfg.run_compute_stats)
 
-    # 推送数据集到Hugging Face Hub
-    if cfg.push_to_hub:
-        dataset.push_to_hub(tags=cfg.tags, private=cfg.private)
-
     log_say("退出程序", cfg.play_sounds)
     return dataset
 
@@ -318,7 +311,8 @@ def control_robot(cfg: ControlPipelineConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))  # 记录配置信息
 
-    robot = FairinoRobot(teleop_mode=True)  # 根据配置创建机器人实例
+    teleop_mode = not isinstance(cfg.control, ReplayControlConfig)
+    robot = FairinoRobot(teleop_mode=teleop_mode)  # 根据配置创建机器人实例
 
     # 根据控制类型选择执行模式
     if isinstance(cfg.control, TeleoperateControlConfig):
