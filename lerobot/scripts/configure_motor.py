@@ -41,7 +41,7 @@ def configure_motor(port,  model, motor_idx_des, baudrate_des):
     motor_index_arbitrary = motor_idx_des  # Use the motor ID passed via argument
     motor_model = model  # Use the motor model passed via argument
 
-    config = motor_bus_config_cls(serial_port=port, motors={motor_name: (motor_index_arbitrary, motor_model)})
+    config = motor_bus_config_cls(ip_address=None, serial_port=port, motors={motor_name: (motor_index_arbitrary, motor_model)})
 
     # Initialize the MotorBus with the correct port and motor configurations
     motor_bus = motor_bus_cls(config=config)

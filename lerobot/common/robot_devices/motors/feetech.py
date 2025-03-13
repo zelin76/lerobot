@@ -572,8 +572,8 @@ class FeetechMotorsBus:
             motor_ids.append(motor_idx)
             models.append(model)
 
-        if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
-            values = self.revert_calibration(values, motor_names)
+        # if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
+        #     values = self.revert_calibration(values, motor_names)
 
         values = values.tolist()
 

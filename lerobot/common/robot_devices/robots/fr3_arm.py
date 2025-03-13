@@ -17,13 +17,14 @@ class FairinoArm:
         config: MotorsBusConfig,
         gripper_encoder_range : list[int]
     ):
-        self.ip_address = config.port
+        self.ip_address = config.ip_address
         self.motors = config.motors
         self.arm = None
         self.is_connected = False
         self.gripper_encoder_range = gripper_encoder_range
         gripper_config = MotorsBusConfig(
             serial_port=config.serial_port,
+            ip_address=None,
             motors={
             # name: (index, model)
             "gripper": [1, "sts3215"]}
@@ -100,11 +101,11 @@ class FairinoArm:
     def gripper_encoder2pos(self, endcoder_pos):
         pos = ((endcoder_pos - self.gripper_encoder_range[0]) * 100 
                 / (self.gripper_encoder_range[1] - self.gripper_encoder_range[0]))
-        pos = np.clip(pos, min=0, max=100)
+        pos = np.clip(pos, a_min=0, a_max=100)
         return pos
     def gripper_pos2encoder(self, pos):
         encoder_pos = int((pos/100)*(self.gripper_encoder_range[1]-self.gripper_encoder_range[0])+self.gripper_encoder_range[0])
-        encoder_pos = np.clip(encoder_pos, min=self.gripper_encoder_range[0], max=self.gripper_encoder_range[1])
+        encoder_pos = np.clip(encoder_pos, a_min=self.gripper_encoder_range[0], a_max=self.gripper_encoder_range[1])
         return encoder_pos
     
     def setJointPos(self, values: np.ndarray, cmd_T=0.02):

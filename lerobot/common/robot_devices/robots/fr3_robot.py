@@ -44,7 +44,7 @@ class Fr3obotConfig :
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
     # the number of motors in your follower arms.
-    max_relative_target         = np.array([3, 3, 3, 3, 3, 3])
+    max_relative_target         = np.array([3, 3, 3, 3, 3, 3, 100])
     
     ##主从手臂关节的映射关系 方向、偏置、 比例
     leader_arm_encoder2deg      = 180.0 / 2048.0
@@ -62,6 +62,7 @@ class Fr3obotConfig :
         default_factory=lambda: {
             "left": MotorsBusConfig(
                 serial_port="/dev/ttyACM0",
+                ip_address=None,
                 motors={
                     # name: (index, model)
                     "shoulder_pan":  [1, "sts3215"],
@@ -97,11 +98,17 @@ class Fr3obotConfig :
     
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
+            "stero": OpenCVCameraConfig(
+                camera_index=4,
+                fps=30,
+                width=640,
+                height=240,
+            ),
             "laptop": OpenCVCameraConfig(
                 camera_index=0,
                 fps=30,
-                width=640,
-                height=480,
+                width=320,
+                height=240,
             )
         }
     )
@@ -237,7 +244,7 @@ class FairinoRobot:
         leadr_arm_position = origin_position[:-1]
         gripper_position =  self.align_gripper_position(origin_position[-1])
         leadr_arm_position = (leadr_arm_position - self.config.leader_arm_encoder_offset) * \
-                            self.config.leader_arm_ratio * self.config.leader_arm_dir + self.config.leader_arm_deg_offset
+                            self.config.leader_arm_encoder2deg * self.config.leader_arm_dir + self.config.leader_arm_deg_offset
         
         leadr_arm_position = leadr_arm_position.clip(min=self.config.follow_arm_limit_min, \
                                                      max=self.config.follow_arm_limit_max)

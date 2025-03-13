@@ -232,6 +232,7 @@ def control_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    loop_count = 0
     print("start loop ....")
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
@@ -250,19 +251,21 @@ def control_loop(
         if dataset is not None:
             frame = {**observation, **action}
             dataset.add_frame(frame)
-        # if display_cameras and not is_headless():
-        #     image_keys = [key for key in observation if "image" in key]
-        #     for key in image_keys:
-        #         img = observation[key].numpy()
-        #         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        #         cv2.imshow(key, img)
-        #     cv2.waitKey(1)
+        if display_cameras and not is_headless():
+            image_keys = [key for key in observation if "image" in key]
+            for key in image_keys:
+                img = observation[key].numpy()
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                cv2.imshow(key, img)
+            cv2.waitKey(1)
         if fps is not None:
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(1 / fps - dt_s)
 
         dt_s = time.perf_counter() - start_loop_t
-        log_control_info(robot, dt_s, fps=fps)
+        loop_count = loop_count + 1
+        if loop_count % fps == 0 :
+            log_control_info(robot, dt_s, fps=fps)
         timestamp = time.perf_counter() - start_episode_t
         if events["exit_early"]:
             events["exit_early"] = False

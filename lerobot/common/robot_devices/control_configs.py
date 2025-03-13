@@ -137,7 +137,6 @@ class ReplayControlConfig(ControlConfig):
 
 @dataclass
 class ControlPipelineConfig:
-    robot: RobotConfig
     control: ControlConfig
 
     @classmethod
