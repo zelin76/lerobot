@@ -1,16 +1,33 @@
 from typing import Protocol
 
 from lerobot.common.robot_devices.robots.configs import (
-    AlohaRobotConfig,
-    KochBimanualRobotConfig,
-    KochRobotConfig,
     ManipulatorRobotConfig,
-    MossRobotConfig,
     RobotConfig,
     So100RobotConfig,
-    StretchRobotConfig,
 )
 
+import logging
+import numpy as np
+import torch
+
+def ensure_safe_goal_position(
+    goal_pos: torch.Tensor, present_pos: torch.Tensor, max_relative_target: float | list[float]
+):
+    # Cap relative action target magnitude for safety.
+    diff = goal_pos - present_pos
+    max_relative_target = torch.tensor(max_relative_target)
+    safe_diff = torch.minimum(diff, max_relative_target)
+    safe_diff = torch.maximum(safe_diff, -max_relative_target)
+    safe_goal_pos = present_pos + safe_diff
+    print(goal_pos.dtype, safe_goal_pos.dtype)
+    if not torch.allclose(goal_pos, safe_goal_pos):
+        logging.warning(
+            "Relative goal position magnitude had to be clamped to be safe.\n"
+            f"  requested relative goal position target: {diff}\n"
+            f"    clamped relative goal position target: {safe_diff}"
+        )
+
+    return safe_goal_pos
 
 def get_arm_id(name, arm_type):
     """Returns the string identifier of a robot arm. For instance, for a bimanual manipulator
@@ -33,32 +50,15 @@ class Robot(Protocol):
 
 
 def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
-    if robot_type == "aloha":
-        return AlohaRobotConfig(**kwargs)
-    elif robot_type == "koch":
-        return KochRobotConfig(**kwargs)
-    elif robot_type == "koch_bimanual":
-        return KochBimanualRobotConfig(**kwargs)
-    elif robot_type == "moss":
-        return MossRobotConfig(**kwargs)
-    elif robot_type == "so100":
+    if robot_type == "so100":
         return So100RobotConfig(**kwargs)
-    elif robot_type == "stretch":
-        return StretchRobotConfig(**kwargs)
     else:
         raise ValueError(f"Robot type '{robot_type}' is not available.")
 
 
 def make_robot_from_config(config: RobotConfig):
-    if isinstance(config, ManipulatorRobotConfig):
-        from lerobot.common.robot_devices.robots.manipulator import ManipulatorRobot
-
-        return ManipulatorRobot(config)
-    else:
-        from lerobot.common.robot_devices.robots.stretch import StretchRobot
-
-        return StretchRobot(config)
-
+    from lerobot.common.robot_devices.robots.manipulator import ManipulatorRobot
+    return ManipulatorRobot(config)
 
 def make_robot(robot_type: str, **kwargs) -> Robot:
     config = make_robot_config(robot_type, **kwargs)

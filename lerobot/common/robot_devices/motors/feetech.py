@@ -5,10 +5,11 @@ import time
 import traceback
 from copy import deepcopy
 
+import scservo_sdk as scs
 import numpy as np
 import tqdm
 
-from lerobot.common.robot_devices.motors.configs import FeetechMotorsBusConfig
+from lerobot.common.robot_devices.motors.configs import MotorsBusConfig
 from lerobot.common.robot_devices.utils import RobotDeviceAlreadyConnectedError, RobotDeviceNotConnectedError
 from lerobot.common.utils.utils import capture_timestamp_utc
 
@@ -253,7 +254,7 @@ class FeetechMotorsBus:
     motor_index = 6
     motor_model = "sts3215"
 
-    config = FeetechMotorsBusConfig(
+    config = MotorsBusConfig(
         port="/dev/tty.usbmodem575E0031751",
         motors={motor_name: (motor_index, motor_model)},
     )
@@ -273,7 +274,7 @@ class FeetechMotorsBus:
 
     def __init__(
         self,
-        config: FeetechMotorsBusConfig,
+        config: MotorsBusConfig,
     ):
         self.port = config.port
         self.motors = config.motors
@@ -298,11 +299,6 @@ class FeetechMotorsBus:
                 f"FeetechMotorsBus({self.port}) is already connected. Do not call `motors_bus.connect()` twice."
             )
 
-        if self.mock:
-            import tests.mock_scservo_sdk as scs
-        else:
-            import scservo_sdk as scs
-
         self.port_handler = scs.PortHandler(self.port)
         self.packet_handler = scs.PacketHandler(PROTOCOL_VERSION)
 
@@ -322,10 +318,6 @@ class FeetechMotorsBus:
         self.port_handler.setPacketTimeoutMillis(TIMEOUT_MS)
 
     def reconnect(self):
-        if self.mock:
-            import tests.mock_scservo_sdk as scs
-        else:
-            import scservo_sdk as scs
 
         self.port_handler = scs.PortHandler(self.port)
         self.packet_handler = scs.PacketHandler(PROTOCOL_VERSION)
@@ -630,6 +622,9 @@ class FeetechMotorsBus:
 
             if track["prev"][idx] is None:
                 track["prev"][idx] = values[i]
+                # if values[i] > 2048:
+                #     values[i] -=4096
+                # elif values[i]
                 continue
 
             # Detect a full rotation occured
@@ -649,10 +644,6 @@ class FeetechMotorsBus:
         return values
 
     def read_with_motor_ids(self, motor_models, motor_ids, data_name, num_retry=NUM_READ_RETRY):
-        if self.mock:
-            import tests.mock_scservo_sdk as scs
-        else:
-            import scservo_sdk as scs
 
         return_list = True
         if not isinstance(motor_ids, list):
@@ -687,10 +678,6 @@ class FeetechMotorsBus:
             return values[0]
 
     def read(self, data_name, motor_names: str | list[str] | None = None):
-        if self.mock:
-            import tests.mock_scservo_sdk as scs
-        else:
-            import scservo_sdk as scs
 
         if not self.is_connected:
             raise RobotDeviceNotConnectedError(
@@ -753,8 +740,8 @@ class FeetechMotorsBus:
         if data_name in CALIBRATION_REQUIRED:
             values = self.avoid_rotation_reset(values, motor_names, data_name)
 
-        if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
-            values = self.apply_calibration_autocorrect(values, motor_names)
+        # if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
+        #     values = self.apply_calibration_autocorrect(values, motor_names)
 
         # log the number of seconds it took to read the data from the motors
         delta_ts_name = get_log_name("delta_timestamp_s", "read", data_name, motor_names)
@@ -767,10 +754,6 @@ class FeetechMotorsBus:
         return values
 
     def write_with_motor_ids(self, motor_models, motor_ids, data_name, values, num_retry=NUM_WRITE_RETRY):
-        if self.mock:
-            import tests.mock_scservo_sdk as scs
-        else:
-            import scservo_sdk as scs
 
         if not isinstance(motor_ids, list):
             motor_ids = [motor_ids]
@@ -802,11 +785,6 @@ class FeetechMotorsBus:
             )
 
         start_time = time.perf_counter()
-
-        if self.mock:
-            import tests.mock_scservo_sdk as scs
-        else:
-            import scservo_sdk as scs
 
         if motor_names is None:
             motor_names = self.motor_names

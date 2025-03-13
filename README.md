@@ -93,6 +93,7 @@ Install 🤗 LeRobot:
 ```bash
 pip install -e .
 ```
+sudo apt-get install libsvtav1enc-dev
 
 > **NOTE:** Depending on your platform, If you encounter any build errors during this step
 you may need to install `cmake` and `build-essential` for building some of our dependencies.

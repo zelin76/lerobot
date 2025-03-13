@@ -4,6 +4,11 @@ Utilities to control a robot.
 Useful to record a dataset, replay a recorded episode, run the policy on your robot
 and record an evaluation dataset, and to recalibrate your robot if needed.
 
+用于控制机器人的实用工具。
+
+支持校准机器人、遥操作、记录数据集、回放数据集等功能。
+通过命令行参数配置不同的控制模式和机器人类型。
+
 Examples of usage:
 
 - Recalibrate your robot:
@@ -120,7 +125,7 @@ import time
 from dataclasses import asdict
 from pprint import pformat
 
-# from safetensors.torch import load_file, save_file
+# 从safetensors.torch导入load_file, save_file（当前已注释）
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.robot_devices.control_configs import (
@@ -141,68 +146,27 @@ from lerobot.common.robot_devices.control_utils import (
     stop_recording,
     warmup_record,
 )
+from lerobot.common.robot_devices.robots.signal_arm import FairinoRobot
 from lerobot.common.robot_devices.robots.utils import Robot, make_robot_from_config
 from lerobot.common.robot_devices.utils import busy_wait, safe_disconnect
 from lerobot.common.utils.utils import has_method, init_logging, log_say
 from lerobot.configs import parser
 
 ########################################################################################
-# Control modes
+# 控制模式实现
 ########################################################################################
 
-
-@safe_disconnect
-def calibrate(robot: Robot, cfg: CalibrateControlConfig):
-    # TODO(aliberts): move this code in robots' classes
-    if robot.robot_type.startswith("stretch"):
-        if not robot.is_connected:
-            robot.connect()
-        if not robot.is_homed():
-            robot.home()
-        return
-
-    arms = robot.available_arms if cfg.arms is None else cfg.arms
-    unknown_arms = [arm_id for arm_id in arms if arm_id not in robot.available_arms]
-    available_arms_str = " ".join(robot.available_arms)
-    unknown_arms_str = " ".join(unknown_arms)
-
-    if arms is None or len(arms) == 0:
-        raise ValueError(
-            "No arm provided. Use `--arms` as argument with one or more available arms.\n"
-            f"For instance, to recalibrate all arms add: `--arms {available_arms_str}`"
-        )
-
-    if len(unknown_arms) > 0:
-        raise ValueError(
-            f"Unknown arms provided ('{unknown_arms_str}'). Available arms are `{available_arms_str}`."
-        )
-
-    for arm_id in arms:
-        arm_calib_path = robot.calibration_dir / f"{arm_id}.json"
-        if arm_calib_path.exists():
-            print(f"Removing '{arm_calib_path}'")
-            arm_calib_path.unlink()
-        else:
-            print(f"Calibration file not found '{arm_calib_path}'")
-
-    if robot.is_connected:
-        robot.disconnect()
-
-    # Calling `connect` automatically runs calibration
-    # when the calibration file is missing
-    robot.connect()
-    robot.disconnect()
-    print("Calibration is done! You can now teleoperate and record datasets!")
 
 
 @safe_disconnect
 def teleoperate(robot: Robot, cfg: TeleoperateControlConfig):
+    """遥操作模式，持续控制机器人运动"""
     control_loop(
         robot,
         control_time_s=cfg.teleop_time_s,
         fps=cfg.fps,
-        teleoperate=True,
-        display_cameras=cfg.display_cameras,
+        teleoperate=True,  # 启用遥操作模式
+        display_cameras=True,  # 是否显示摄像头画面
     )
 
 
@@ -211,21 +175,24 @@ def record(
     robot: Robot,
     cfg: RecordControlConfig,
 ) -> LeRobotDataset:
-    # TODO(rcadene): Add option to record logs
+    """记录数据集模式，支持多episode录制和策略控制"""
+    # 处理数据集恢复/继续录制
     if cfg.resume:
         dataset = LeRobotDataset(
             cfg.repo_id,
             root=cfg.root,
             local_files_only=cfg.local_files_only,
         )
+        # 初始化图像写入器（多进程/线程）
         if len(robot.cameras) > 0:
             dataset.start_image_writer(
                 num_processes=cfg.num_image_writer_processes,
                 num_threads=cfg.num_image_writer_threads_per_camera * len(robot.cameras),
             )
+        # 校验数据集与机器人兼容性
         sanity_check_dataset_robot_compatibility(dataset, robot, cfg.fps, cfg.video)
     else:
-        # Create empty dataset or load existing saved episodes
+        # 创建新数据集
         sanity_check_dataset_name(cfg.repo_id, cfg.policy)
         dataset = LeRobotDataset.create(
             cfg.repo_id,
@@ -236,32 +203,32 @@ def record(
             image_writer_processes=cfg.num_image_writer_processes,
             image_writer_threads=cfg.num_image_writer_threads_per_camera * len(robot.cameras),
         )
+        print("creat dataset .....")
 
-    # Load pretrained policy
+    # 加载预训练策略（如果有）
     policy = None if cfg.policy is None else make_policy(cfg.policy, cfg.device, ds_meta=dataset.meta)
 
     if not robot.is_connected:
         robot.connect()
-
+    print("listener key board .....")
+    # 初始化键盘监听（用于控制录制流程）
     listener, events = init_keyboard_listener()
-
-    # Execute a few seconds without recording to:
-    # 1. teleoperate the robot to move it in starting position if no policy provided,
-    # 2. give times to the robot devices to connect and start synchronizing,
-    # 3. place the cameras windows on screen
+    print("listener key board .....")
+    # 录制前热身阶段（调整起始位置/设备同步）
     enable_teleoperation = policy is None
-    log_say("Warmup record", cfg.play_sounds)
+    log_say("准备开始录制", cfg.play_sounds)
     warmup_record(robot, events, enable_teleoperation, cfg.warmup_time_s, cfg.display_cameras, cfg.fps)
 
     if has_method(robot, "teleop_safety_stop"):
-        robot.teleop_safety_stop()
+        robot.teleop_safety_stop()  # 安全停止检查
 
     recorded_episodes = 0
     while True:
         if recorded_episodes >= cfg.num_episodes:
             break
 
-        log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+        # 开始录制单个episode
+        log_say(f"正在录制第{dataset.num_episodes}个episode", cfg.play_sounds)
         record_episode(
             dataset=dataset,
             robot=robot,
@@ -274,41 +241,43 @@ def record(
             fps=cfg.fps,
         )
 
-        # Execute a few seconds without recording to give time to manually reset the environment
-        # Current code logic doesn't allow to teleoperate during this time.
-        # TODO(rcadene): add an option to enable teleoperation during reset
-        # Skip reset for the last episode to be recorded
+        # 环境重置阶段
         if not events["stop_recording"] and (
             (recorded_episodes < cfg.num_episodes - 1) or events["rerecord_episode"]
         ):
-            log_say("Reset the environment", cfg.play_sounds)
+            log_say("正在重置环境", cfg.play_sounds)
             reset_environment(robot, events, cfg.reset_time_s)
 
+        # 处理重新录制逻辑
         if events["rerecord_episode"]:
-            log_say("Re-record episode", cfg.play_sounds)
+            log_say("重新录制当前episode", cfg.play_sounds)
             events["rerecord_episode"] = False
             events["exit_early"] = False
-            dataset.clear_episode_buffer()
+            dataset.clear_episode_buffer()  # 清空当前episode缓存
             continue
 
+        # 保存当前episode
         dataset.save_episode(cfg.single_task)
         recorded_episodes += 1
 
         if events["stop_recording"]:
             break
 
-    log_say("Stop recording", cfg.play_sounds, blocking=True)
+    # 停止录制后续处理
+    log_say("停止录制", cfg.play_sounds, blocking=True)
     stop_recording(robot, listener, cfg.display_cameras)
 
+    # 计算数据集统计信息（可选）
     if cfg.run_compute_stats:
-        logging.info("Computing dataset statistics")
+        logging.info("正在计算数据集统计信息")
 
     dataset.consolidate(cfg.run_compute_stats)
 
+    # 推送数据集到Hugging Face Hub
     if cfg.push_to_hub:
         dataset.push_to_hub(tags=cfg.tags, private=cfg.private)
 
-    log_say("Exiting", cfg.play_sounds)
+    log_say("退出程序", cfg.play_sounds)
     return dataset
 
 
@@ -317,9 +286,8 @@ def replay(
     robot: Robot,
     cfg: ReplayControlConfig,
 ):
-    # TODO(rcadene, aliberts): refactor with control_loop, once `dataset` is an instance of LeRobotDataset
-    # TODO(rcadene): Add option to record logs
-
+    """回放模式，执行数据集中的动作序列"""
+    # 加载指定episode的数据集
     dataset = LeRobotDataset(
         cfg.repo_id, root=cfg.root, episodes=[cfg.episode], local_files_only=cfg.local_files_only
     )
@@ -328,41 +296,42 @@ def replay(
     if not robot.is_connected:
         robot.connect()
 
-    log_say("Replaying episode", cfg.play_sounds, blocking=True)
+    log_say("开始回放episode", cfg.play_sounds, blocking=True)
+    # 逐帧执行动作
     for idx in range(dataset.num_frames):
         start_episode_t = time.perf_counter()
 
         action = actions[idx]["action"]
-        robot.send_action(action)
+        robot.send_action(action)  # 发送动作指令
 
+        # 精确控制帧率
         dt_s = time.perf_counter() - start_episode_t
         busy_wait(1 / cfg.fps - dt_s)
 
         dt_s = time.perf_counter() - start_episode_t
-        log_control_info(robot, dt_s, fps=cfg.fps)
+        log_control_info(robot, dt_s, fps=cfg.fps)  # 记录控制信息
 
 
-@parser.wrap()
+@parser.wrap()  # 参数解析装饰器
 def control_robot(cfg: ControlPipelineConfig):
+    """主控制函数，根据配置选择控制模式"""
     init_logging()
-    logging.info(pformat(asdict(cfg)))
+    logging.info(pformat(asdict(cfg)))  # 记录配置信息
 
-    robot = make_robot_from_config(cfg.robot)
+    robot = FairinoRobot(teleop_mode=True)  # 根据配置创建机器人实例
 
-    if isinstance(cfg.control, CalibrateControlConfig):
-        calibrate(robot, cfg.control)
-    elif isinstance(cfg.control, TeleoperateControlConfig):
+    # 根据控制类型选择执行模式
+    if isinstance(cfg.control, TeleoperateControlConfig):
         teleoperate(robot, cfg.control)
     elif isinstance(cfg.control, RecordControlConfig):
         record(robot, cfg.control)
     elif isinstance(cfg.control, ReplayControlConfig):
         replay(robot, cfg.control)
 
+    # 安全断开连接
     if robot.is_connected:
-        # Disconnect manually to avoid a "Core dump" during process
-        # termination due to camera threads not properly exiting.
         robot.disconnect()
 
 
 if __name__ == "__main__":
-    control_robot()
+    control_robot()  # 程序入口

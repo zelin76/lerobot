@@ -11,7 +11,7 @@ import threading
 import time
 from pathlib import Path
 from threading import Thread
-
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -65,11 +65,6 @@ def find_cameras(raise_when_empty=False, max_index_search_range=MAX_OPENCV_INDEX
 def _find_cameras(
     possible_camera_ids: list[int | str], raise_when_empty=False, mock=False
 ) -> list[int | str]:
-    if mock:
-        import tests.mock_cv2 as cv2
-    else:
-        import cv2
-
     camera_ids = []
     for camera_idx in possible_camera_ids:
         camera = cv2.VideoCapture(camera_idx)
@@ -243,12 +238,6 @@ class OpenCVCamera:
         self.stop_event = None
         self.color_image = None
         self.logs = {}
-
-        if self.mock:
-            import tests.mock_cv2 as cv2
-        else:
-            import cv2
-
         # TODO(aliberts): Do we keep original width/height or do we define them after rotation?
         self.rotation = None
         if config.rotation == -90:
@@ -262,15 +251,10 @@ class OpenCVCamera:
         if self.is_connected:
             raise RobotDeviceAlreadyConnectedError(f"OpenCVCamera({self.camera_index}) is already connected.")
 
-        if self.mock:
-            import tests.mock_cv2 as cv2
-        else:
-            import cv2
-
-            # Use 1 thread to avoid blocking the main thread. Especially useful during data collection
-            # when other threads are used to save the images.
-            cv2.setNumThreads(1)
-
+        #     # Use 1 thread to avoid blocking the main thread. Especially useful during data collection
+        #     # when other threads are used to save the images.
+        #     
+        cv2.setNumThreads(1)
         camera_idx = f"/dev/video{self.camera_index}" if platform.system() == "Linux" else self.camera_index
         # First create a temporary camera trying to access `camera_index`,
         # and verify it is a valid camera by calling `isOpened`.
@@ -330,6 +314,7 @@ class OpenCVCamera:
         self.height = round(actual_height)
 
         self.is_connected = True
+        print(f"connect opencv camera /dev/video{self.camera_index} width{self.width} height{self.height} fps{self.fps}")
 
     def read(self, temporary_color_mode: str | None = None) -> np.ndarray:
         """Read a frame from the camera returned in the format (height, width, channels)
@@ -349,7 +334,7 @@ class OpenCVCamera:
 
         if not ret:
             raise OSError(f"Can't capture color image from camera {self.camera_index}.")
-
+ 
         requested_color_mode = self.color_mode if temporary_color_mode is None else temporary_color_mode
 
         if requested_color_mode not in ["rgb", "bgr"]:
@@ -361,10 +346,6 @@ class OpenCVCamera:
         # However, Deep Learning framework such as LeRobot uses RGB format as default to train neural networks,
         # so we convert the image color from BGR to RGB.
         if requested_color_mode == "rgb":
-            if self.mock:
-                import tests.mock_cv2 as cv2
-            else:
-                import cv2
 
             color_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB)
 
@@ -391,6 +372,7 @@ class OpenCVCamera:
         while not self.stop_event.is_set():
             try:
                 self.color_image = self.read()
+                
             except Exception as e:
                 print(f"Error reading in thread: {e}")
 
@@ -399,13 +381,11 @@ class OpenCVCamera:
             raise RobotDeviceNotConnectedError(
                 f"OpenCVCamera({self.camera_index}) is not connected. Try running `camera.connect()` first."
             )
-
         if self.thread is None:
             self.stop_event = threading.Event()
             self.thread = Thread(target=self.read_loop, args=())
             self.thread.daemon = True
             self.thread.start()
-
         num_tries = 0
         while True:
             if self.color_image is not None:

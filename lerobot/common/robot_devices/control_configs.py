@@ -63,7 +63,7 @@ class RecordControlConfig(ControlConfig):
     # By default, run the computation of the data statistics at the end of data collection. Compute intensive and not required to just replay an episode.
     run_compute_stats: bool = True
     # Upload dataset to Hugging Face hub.
-    push_to_hub: bool = True
+    push_to_hub: bool = False
     # Upload on private repository on the Hugging Face hub.
     private: bool = False
     # Add tags to your dataset on the hub.

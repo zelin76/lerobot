@@ -441,7 +441,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.tolerance_s = tolerance_s
         self.video_backend = video_backend if video_backend else "pyav"
         self.delta_indices = None
-        self.local_files_only = local_files_only
+        self.local_files_only = True
 
         # Unused attributes
         self.image_writer = None

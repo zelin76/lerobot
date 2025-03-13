@@ -16,42 +16,24 @@ import argparse
 import time
 
 
-def get_motor_bus_cls(brand: str) -> tuple:
-    if brand == "feetech":
-        from lerobot.common.robot_devices.motors.configs import FeetechMotorsBusConfig
-        from lerobot.common.robot_devices.motors.feetech import (
-            MODEL_BAUDRATE_TABLE,
-            SCS_SERIES_BAUDRATE_TABLE,
-            FeetechMotorsBus,
-        )
-
-        return FeetechMotorsBusConfig, FeetechMotorsBus, MODEL_BAUDRATE_TABLE, SCS_SERIES_BAUDRATE_TABLE
-
-    elif brand == "dynamixel":
-        from lerobot.common.robot_devices.motors.configs import DynamixelMotorsBusConfig
-        from lerobot.common.robot_devices.motors.dynamixel import (
-            MODEL_BAUDRATE_TABLE,
-            X_SERIES_BAUDRATE_TABLE,
-            DynamixelMotorsBus,
-        )
-
-        return DynamixelMotorsBusConfig, DynamixelMotorsBus, MODEL_BAUDRATE_TABLE, X_SERIES_BAUDRATE_TABLE
-
-    else:
-        raise ValueError(
-            f"Currently we do not support this motor brand: {brand}. We currently support feetech and dynamixel motors."
-        )
-
-
-def configure_motor(port, brand, model, motor_idx_des, baudrate_des):
-    motor_bus_config_cls, motor_bus_cls, model_baudrate_table, series_baudrate_table = get_motor_bus_cls(
-        brand
+def get_motor_bus_cls() -> tuple:
+    from lerobot.common.robot_devices.motors.configs import MotorsBusConfig
+    from lerobot.common.robot_devices.motors.feetech import (
+        MODEL_BAUDRATE_TABLE,
+        SCS_SERIES_BAUDRATE_TABLE,
+        FeetechMotorsBus,
     )
+
+    return MotorsBusConfig, FeetechMotorsBus, MODEL_BAUDRATE_TABLE, SCS_SERIES_BAUDRATE_TABLE
+
+
+def configure_motor(port,  model, motor_idx_des, baudrate_des):
+    motor_bus_config_cls, motor_bus_cls, model_baudrate_table, series_baudrate_table = get_motor_bus_cls()
 
     # Check if the provided model exists in the model_baud_rate_table
     if model not in model_baudrate_table:
         raise ValueError(
-            f"Invalid model '{model}' for brand '{brand}'. Supported models: {list(model_baudrate_table.keys())}"
+            f"Invalid model '{model}'. Supported models: {list(model_baudrate_table.keys())}"
         )
 
     # Setup motor names, indices, and models
@@ -99,9 +81,8 @@ def configure_motor(port, brand, model, motor_idx_des, baudrate_des):
 
         print(f"Motor index found at: {motor_index}")
 
-        if brand == "feetech":
-            # Allows ID and BAUDRATE to be written in memory
-            motor_bus.write_with_motor_ids(motor_bus.motor_models, motor_index, "Lock", 0)
+        # Allows ID and BAUDRATE to be written in memory
+        motor_bus.write_with_motor_ids(motor_bus.motor_models, motor_index, "Lock", 0)
 
         if baudrate != baudrate_des:
             print(f"Setting its baudrate to {baudrate_des}")
@@ -119,27 +100,30 @@ def configure_motor(port, brand, model, motor_idx_des, baudrate_des):
                 raise OSError("Failed to write baudrate.")
 
         print(f"Setting its index to desired index {motor_idx_des}")
-        if brand == "feetech":
-            motor_bus.write_with_motor_ids(motor_bus.motor_models, motor_index, "Lock", 0)
+
+        motor_bus.write_with_motor_ids(motor_bus.motor_models, motor_index, "Lock", 0)
         motor_bus.write_with_motor_ids(motor_bus.motor_models, motor_index, "ID", motor_idx_des)
 
         present_idx = motor_bus.read_with_motor_ids(motor_bus.motor_models, motor_idx_des, "ID", num_retry=2)
         if present_idx != motor_idx_des:
             raise OSError("Failed to write index.")
-
-        if brand == "feetech":
-            # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
-            # the motors. Note: this configuration is not in the official STS3215 Memory Table
-            motor_bus.write("Lock", 0)
-            motor_bus.write("Maximum_Acceleration", 254)
-
-            motor_bus.write("Goal_Position", 2048)
-            time.sleep(4)
-            print("Present Position", motor_bus.read("Present_Position"))
-
-            motor_bus.write("Offset", 0)
-            time.sleep(4)
-            print("Offset", motor_bus.read("Offset"))
+        
+        motor_bus.write("Torque_Enable", 0)
+        
+        # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
+        # the motors. Note: this configuration is not in the official STS3215 Memory Table
+        motor_bus.write("Lock", 0)
+        motor_bus.write("Maximum_Acceleration", 254)
+        time.sleep(1)
+        print("Present Position", motor_bus.read("Present_Position"))
+        print("start set zero position ")
+        motor_bus.write("Torque_Enable", 128)
+        time.sleep(1)
+        print("Present Position", motor_bus.read("Present_Position"))
+        # motor_bus.write("Offset", 0)
+        # motor_bus.write("Lock", 1)
+        time.sleep(4)
+        print("Offset", motor_bus.read("Offset"))
 
     except Exception as e:
         print(f"Error occurred during motor configuration: {e}")
@@ -152,12 +136,11 @@ def configure_motor(port, brand, model, motor_idx_des, baudrate_des):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=str, required=True, help="Motors bus port (e.g. dynamixel,feetech)")
-    parser.add_argument("--brand", type=str, required=True, help="Motor brand (e.g. dynamixel,feetech)")
-    parser.add_argument("--model", type=str, required=True, help="Motor model (e.g. xl330-m077,sts3215)")
+    parser.add_argument("--model", type=str, default='sts3215', help="Motor model (e.g. xl330-m077,sts3215)")
     parser.add_argument("--ID", type=int, required=True, help="Desired ID of the current motor (e.g. 1,2,3)")
     parser.add_argument(
         "--baudrate", type=int, default=1000000, help="Desired baudrate for the motor (default: 1000000)"
     )
     args = parser.parse_args()
 
-    configure_motor(args.port, args.brand, args.model, args.ID, args.baudrate)
+    configure_motor(args.port, args.model, args.ID, args.baudrate)

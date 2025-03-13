@@ -98,7 +98,7 @@ class MossRobotConfig(ManipulatorRobotConfig):
 
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
-            "main": FeetechMotorsBusConfig(
+            "main": MotorsBusConfig(
                 port="/dev/tty.usbmodem58760431091",  <-- UPDATE HERE
                 motors={
                     # name: (index, model)
@@ -115,7 +115,7 @@ class MossRobotConfig(ManipulatorRobotConfig):
 
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
-            "main": FeetechMotorsBusConfig(
+            "main": MotorsBusConfig(
                 port="/dev/tty.usbmodem585A0076891",  <-- UPDATE HERE
                 motors={
                     # name: (index, model)

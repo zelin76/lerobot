@@ -889,7 +889,7 @@ Your robot should replicate movements similar to those you recorded. For example
 To train a policy to control your robot, use the [`python lerobot/scripts/train.py`](../lerobot/scripts/train.py) script. A few arguments are required. Here is an example command:
 ```bash
 python lerobot/scripts/train.py \
-  --dataset.repo_id=${HF_USER}/koch_test \
+  --dataset.repo_id=lerobot/aloha_static_screw_driver \
   --policy.type=act \
   --output_dir=outputs/train/act_koch_test \
   --job_name=act_koch_test \

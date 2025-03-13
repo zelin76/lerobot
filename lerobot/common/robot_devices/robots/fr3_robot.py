@@ -13,6 +13,20 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from dataclasses import dataclass, field
+from typing import Sequence
+
+import draccus
+
+from lerobot.common.robot_devices.cameras.configs import (
+    CameraConfig,
+    IntelRealSenseCameraConfig,
+    OpenCVCameraConfig,
+)
+from lerobot.common.robot_devices.motors.configs import (
+    MotorsBusConfig,
+)
+
 from lerobot.common.robot_devices.cameras.utils import make_cameras_from_configs
 from lerobot.common.robot_devices.motors.utils import MotorsBus, make_motors_buses_from_configs
 from lerobot.common.robot_devices.robots.configs import ManipulatorRobotConfig
@@ -22,120 +36,134 @@ from lerobot.common.robot_devices.utils import RobotDeviceAlreadyConnectedError,
 
 from lerobot.common.robot_devices.motors.feetech import TorqueMode
 
-from lerobot.common.robot_devices.fairino import Robot
+from lerobot.common.robot_devices.motors.feetech import FeetechMotorsBus
+from lerobot.common.robot_devices.robots.fr3_arm import FairinoArm
 
-class ManipulatorRobot:
-    # TODO(rcadene): Implement force feedback
-    """This class allows to control any manipulator robot of various number of motors.
+@dataclass
+class Fr3obotConfig(ManipulatorRobotConfig):
+    calibration_dir: str = ".cache/calibration/fr3"
+    # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
+    # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
+    # the number of motors in your follower arms.
+    max_relative_target: int | None = None
 
-    Non exaustive list of robots:
-    - [Koch v1.0](https://github.com/AlexanderKoch-Koch/low_cost_robot), with and without the wrist-to-elbow expansion, developed
-    by Alexander Koch from [Tau Robotics](https://tau-robotics.com)
-    - [Koch v1.1](https://github.com/jess-moss/koch-v1-1) developed by Jess Moss
-    - [Aloha](https://www.trossenrobotics.com/aloha-kits) developed by Trossen Robotics
+    leader_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "left": MotorsBusConfig(
+                port="/dev/leader_left",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "sts3215"],
+                    "shoulder_lift": [2, "sts3215"],
+                    "elbow_flex": [3, "sts3215"],
+                    "wrist_flex": [4, "sts3215"],
+                    "wrist_roll": [5, "sts3215"],
+                    "gripper": [6, "sts3215"],
+                },
+                mock=False
+            ),
+            "right": MotorsBusConfig(
+                port="/dev/leader_right",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "sts3215"],
+                    "shoulder_lift": [2, "sts3215"],
+                    "elbow_flex": [3, "sts3215"],
+                    "wrist_flex": [4, "sts3215"],
+                    "wrist_roll": [5, "sts3215"],
+                    "gripper": [6, "sts3215"],
+                },
+                mock=False
+            ),
+        }
+    )
 
-    Example of instantiation, a pre-defined robot config is required:
-    ```python
-    robot = ManipulatorRobot(KochRobotConfig())
-    ```
+    follower_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "left": MotorsBusConfig(
+                port="192.168.58.2",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "fr3"],
+                    "shoulder_lift": [2, "fr3"],
+                    "elbow_flex": [3, "fr3"],
+                    "wrist_flex": [4, "fr3"],
+                    "wrist_roll": [5, "fr3"],
+                    "gripper": [6, "sts3215"],
+                },
+                mock=False
+            ),
+            "right": MotorsBusConfig(
+                port="192.168.58.3",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "fr3"],
+                    "shoulder_lift": [2, "fr3"],
+                    "elbow_flex": [3, "fr3"],
+                    "wrist_flex": [4, "fr3"],
+                    "wrist_roll": [5, "fr3"],
+                    "gripper": [6, "sts3215"],
+                },
+                mock=False
+            ),
+        }
+    )
+    
+    grippers = MotorsBusConfig(
+        port="/dev/gripper",
+        motors={
+            # name: (index, model)
+            "gripper_l": [1, "sts3215"],
+            "gripper_r": [2, "sts3215"],
+        },
+        mock=False
+    )
 
-    Example of overwritting motors during instantiation:
-    ```python
-    # Defines how to communicate with the motors of the leader and follower arms
-    leader_arms = {
-        "main": DynamixelMotorsBusConfig(
-            port="/dev/tty.usbmodem575E0031751",
-            motors={
-                # name: (index, model)
-                "shoulder_pan": (1, "xl330-m077"),
-                "shoulder_lift": (2, "xl330-m077"),
-                "elbow_flex": (3, "xl330-m077"),
-                "wrist_flex": (4, "xl330-m077"),
-                "wrist_roll": (5, "xl330-m077"),
-                "gripper": (6, "xl330-m077"),
-            },
-        ),
-    }
-    follower_arms = {
-        "main": DynamixelMotorsBusConfig(
-            port="/dev/tty.usbmodem575E0032081",
-            motors={
-                # name: (index, model)
-                "shoulder_pan": (1, "xl430-w250"),
-                "shoulder_lift": (2, "xl430-w250"),
-                "elbow_flex": (3, "xl330-m288"),
-                "wrist_flex": (4, "xl330-m288"),
-                "wrist_roll": (5, "xl330-m288"),
-                "gripper": (6, "xl330-m288"),
-            },
-        ),
-    }
-    robot_config = KochRobotConfig(leader_arms=leader_arms, follower_arms=follower_arms)
-    robot = ManipulatorRobot(robot_config)
-    ```
+    cameras: dict[str, CameraConfig] = field(
+        default_factory=lambda: {
+            "laptop": OpenCVCameraConfig(
+                camera_index=0,
+                fps=30,
+                width=640,
+                height=480,
+            ),
+            "phone": OpenCVCameraConfig(
+                camera_index=1,
+                fps=30,
+                width=640,
+                height=480,
+            ),
+        }
+    )
 
-    Example of overwritting cameras during instantiation:
-    ```python
-    # Defines how to communicate with 2 cameras connected to the computer.
-    # Here, the webcam of the laptop and the phone (connected in USB to the laptop)
-    # can be reached respectively using the camera indices 0 and 1. These indices can be
-    # arbitrary. See the documentation of `OpenCVCamera` to find your own camera indices.
-    cameras = {
-        "laptop": OpenCVCamera(camera_index=0, fps=30, width=640, height=480),
-        "phone": OpenCVCamera(camera_index=1, fps=30, width=640, height=480),
-    }
-    robot = ManipulatorRobot(KochRobotConfig(cameras=cameras))
-    ```
+    mock: bool = False
 
-    Once the robot is instantiated, connect motors buses and cameras if any (Required):
-    ```python
-    robot.connect()
-    ```
-
-    Example of highest frequency teleoperation, which doesn't require cameras:
-    ```python
-    while True:
-        robot.teleop_step()
-    ```
-
-    Example of highest frequency data collection from motors and cameras (if any):
-    ```python
-    while True:
-        observation, action = robot.teleop_step(record_data=True)
-    ```
-
-    Example of controlling the robot with a policy:
-    ```python
-    while True:
-        # Uses the follower arms and cameras to capture an observation
-        observation = robot.capture_observation()
-
-        # Assumes a policy has been instantiated
-        with torch.inference_mode():
-            action = policy.select_action(observation)
-
-        # Orders the robot to move
-        robot.send_action(action)
-    ```
-
-    Example of disconnecting which is not mandatory since we disconnect when the object is deleted:
-    ```python
-    robot.disconnect()
-    ```
-    """
+class FairinoRobot:
 
     def __init__(
         self,
-        config: ManipulatorRobotConfig,
+        teleop_mode: bool
     ):
-        self.config = config
-        self.robot_type = self.config.type
+        self.config = Fr3obotConfig
+        self.robot_type = "fairino_robot"
         self.calibration_dir = Path(self.config.calibration_dir)
-        self.leader_arms = make_motors_buses_from_configs(self.config.leader_arms)
-        self.follower_arms = make_motors_buses_from_configs(self.config.follower_arms)
+        #leader arm
+        self.leader_arms : dict[str, FeetechMotorsBus] = {}
+        if teleop_mode :
+            for key, cfg in self.config.leader_arms.items():
+                self.leader_arms[key] = FeetechMotorsBus(cfg)
+        #follow arm 
+        self.follower_arms : dict[str, FairinoArm] = {}
+        for key, cfg in self.config.follower_arms.items():
+            self.follower_arms[key] = FairinoArm(cfg)
+        #grippers
+        self.grippers = FeetechMotorsBus(self.config.grippers)
+        #cameras
         self.cameras = make_cameras_from_configs(self.config.cameras)
+
         self.is_connected = False
         self.logs = {}
+
     def get_motor_names(self, arm: dict[str, MotorsBus]) -> list:
         return [f"{arm}_{motor}" for arm, bus in arm.items() for motor in bus.motors]
 
@@ -153,8 +181,8 @@ class ManipulatorRobot:
 
     @property
     def motor_features(self) -> dict:
-        action_names = self.get_motor_names(self.leader_arms)
-        state_names = self.get_motor_names(self.leader_arms)
+        action_names = self.get_motor_names(self.follower_arms)
+        state_names = self.get_motor_names(self.follower_arms)
         return {
             "action": {
                 "dtype": "float32",
@@ -209,29 +237,33 @@ class ManipulatorRobot:
         for name in self.leader_arms:
             print(f"Connecting {name} leader arm.")
             self.leader_arms[name].connect()
-
+        self.grippers.connect()
         # We assume that at connection time, arms are in a rest position, and torque can
         # be safely disabled to run calibration and/or set robot preset configurations.
-        for name in self.follower_arms:
-            self.follower_arms[name].write("Torque_Enable", TorqueMode.DISABLED.value)
+        # for name in self.follower_arms:
+        #     self.follower_arms[name].disable()
         for name in self.leader_arms:
             self.leader_arms[name].write("Torque_Enable", TorqueMode.DISABLED.value)
+        self.grippers.write("Torque_Enable", TorqueMode.DISABLED.value)
 
         self.activate_calibration()
-
         # Set robot preset (e.g. torque in leader gripper for Koch v1.1)
-        self.set_so100_robot_preset()
+        self.set_gripper_preset()
 
         # Enable torque on all motors of the follower arms
         for name in self.follower_arms:
             print(f"Activating torque on {name} follower arm.")
-            self.follower_arms[name].write("Torque_Enable", 1)
+            self.follower_arms[name].enable()
+        self.grippers.write("Torque_Enable", TorqueMode.ENABLED.value)
 
         # Check both arms can be read
         for name in self.follower_arms:
-            self.follower_arms[name].read("Present_Position")
+            self.follower_arms[name].getJointPos()
+
         for name in self.leader_arms:
             self.leader_arms[name].read("Present_Position")
+
+        self.grippers.read("Present_Position")
 
         # Connect the cameras
         for name in self.cameras:
@@ -275,22 +307,21 @@ class ManipulatorRobot:
             calibration = load_or_run_calibration_(name, arm, "leader")
             arm.set_calibration(calibration)
 
-    def set_so100_robot_preset(self):
-        for name in self.follower_arms:
-            # Mode=0 for Position Control
-            self.follower_arms[name].write("Mode", 0)
-            # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
-            self.follower_arms[name].write("P_Coefficient", 16)
-            # Set I_Coefficient and D_Coefficient to default value 0 and 32
-            self.follower_arms[name].write("I_Coefficient", 0)
-            self.follower_arms[name].write("D_Coefficient", 32)
-            # Close the write lock so that Maximum_Acceleration gets written to EPROM address,
-            # which is mandatory for Maximum_Acceleration to take effect after rebooting.
-            self.follower_arms[name].write("Lock", 0)
-            # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
-            # the motors. Note: this configuration is not in the official STS3215 Memory Table
-            self.follower_arms[name].write("Maximum_Acceleration", 254)
-            self.follower_arms[name].write("Acceleration", 254)
+    def set_gripper_preset(self):
+        # Mode=0 for Position Control
+        self.grippers.write("Mode", 0)
+        # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
+        self.grippers.write("P_Coefficient", 16)
+        # Set I_Coefficient and D_Coefficient to default value 0 and 32
+        self.grippers.write("I_Coefficient", 0)
+        self.grippers.write("D_Coefficient", 32)
+        # Close the write lock so that Maximum_Acceleration gets written to EPROM address,
+        # which is mandatory for Maximum_Acceleration to take effect after rebooting.
+        self.grippers.write("Lock", 0)
+        # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
+        # the motors. Note: this configuration is not in the official STS3215 Memory Table
+        self.grippers.write("Maximum_Acceleration", 254)
+        self.grippers.write("Acceleration", 254)
 
     def teleop_step(
         self, record_data=False
@@ -308,6 +339,8 @@ class ManipulatorRobot:
             leader_pos[name] = torch.from_numpy(leader_pos[name])
             self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
 
+        gripper_pos = self.grippers.read("Present_Position")
+
         # Send goal position to the follower
         follower_goal_pos = {}
         for name in self.follower_arms:
@@ -317,16 +350,25 @@ class ManipulatorRobot:
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.
             if self.config.max_relative_target is not None:
-                present_pos = self.follower_arms[name].read("Present_Position")
+                present_pos = self.follower_arms[name].getJointPos()
+                if name == 'left':
+                    present_pos = np.append(present_pos, gripper_pos[:1])
+                else :
+                    present_pos = np.append(present_pos, gripper_pos[1:2])
                 present_pos = torch.from_numpy(present_pos)
                 goal_pos = ensure_safe_goal_position(goal_pos, present_pos, self.config.max_relative_target)
 
             # Used when record_data=True
             follower_goal_pos[name] = goal_pos
-
             goal_pos = goal_pos.numpy().astype(np.int32)
-            self.follower_arms[name].write("Goal_Position", goal_pos)
+            if name == 'left':
+                gripper_pos[0] = goal_pos[6]
+            else :
+                gripper_pos[1] = goal_pos[6]
+            self.follower_arms[name].setJointPos(goal_pos[:6], move_vel=20)
             self.logs[f"write_follower_{name}_goal_pos_dt_s"] = time.perf_counter() - before_fwrite_t
+
+        self.grippers.write("Goal_Position", gripper_pos)
 
         # Early exit when recording data is not requested
         if not record_data:
@@ -356,15 +398,21 @@ class ManipulatorRobot:
         follower_pos = {}
         for name in self.follower_arms:
             before_fread_t = time.perf_counter()
-            follower_pos[name] = self.follower_arms[name].read("Present_Position")
+            follower_pos[name] = self.follower_arms[name].getJointPos()
             follower_pos[name] = torch.from_numpy(follower_pos[name])
             self.logs[f"read_follower_{name}_pos_dt_s"] = time.perf_counter() - before_fread_t
 
+        gripper_pos = self.grippers.read("Present_Position")
+        gripper_pos = torch.from_numpy(gripper_pos)
         # Create state by concatenating follower current position
         state = []
         for name in self.follower_arms:
             if name in follower_pos:
                 state.append(follower_pos[name])
+                if name == 'left':
+                    state.append(gripper_pos[:1])
+                else: 
+                    state.append(gripper_pos[1:2])
         state = torch.cat(state)
 
         # Capture images from cameras
@@ -397,20 +445,26 @@ class ManipulatorRobot:
             raise RobotDeviceNotConnectedError(
                 "ManipulatorRobot is not connected. You need to run `robot.connect()`."
             )
+        
+        gripper_pos = self.grippers.read("Present_Position")
 
         from_idx = 0
         to_idx = 0
         action_sent = []
         for name in self.follower_arms:
             # Get goal position of each follower arm by splitting the action vector
-            to_idx += len(self.follower_arms[name].motor_names)
+            to_idx += len(self.follower_arms[name].motors)
             goal_pos = action[from_idx:to_idx]
             from_idx = to_idx
 
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.
             if self.config.max_relative_target is not None:
-                present_pos = self.follower_arms[name].read("Present_Position")
+                present_pos = self.follower_arms[name].getJointPos()
+                if name == 'left':
+                    present_pos = np.append(present_pos, gripper_pos[:1])
+                else :
+                    present_pos = np.append(present_pos, gripper_pos[1:2])
                 present_pos = torch.from_numpy(present_pos)
                 goal_pos = ensure_safe_goal_position(goal_pos, present_pos, self.config.max_relative_target)
 
@@ -419,7 +473,13 @@ class ManipulatorRobot:
 
             # Send goal position to each follower
             goal_pos = goal_pos.numpy().astype(np.int32)
-            self.follower_arms[name].write("Goal_Position", goal_pos)
+            if name == 'left':
+                gripper_pos[0] = goal_pos[6]
+            else :
+                gripper_pos[1] = goal_pos[6]
+            self.follower_arms[name].setJointPos(goal_pos[:6], move_vel=20)
+
+        self.grippers.write("Goal_Position", gripper_pos)
 
         return torch.cat(action_sent)
 
@@ -439,6 +499,8 @@ class ManipulatorRobot:
         for name in self.leader_arms:
             self.leader_arms[name].disconnect()
 
+        self.grippers.disconnect()
+        
         for name in self.cameras:
             self.cameras[name].disconnect()
 
