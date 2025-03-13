@@ -1,0 +1,25 @@
+
+#######visual dataset#########
+python lerobot/scripts/visualize_dataset.py --repo-id $USER/test3 --episode-index 1 --local-files-only 1
+
+######record#################
+python lerobot/scripts/control_robot.py  --control.type=record --control.fps=30 --control.repo_id=$USER/test3  --control.num_episodes=2  --control.single_task="Grasp a lego block and put it in the bin."
+
+######replay#################
+python lerobot/scripts/control_robot.py --control.type=replay  --control.fps=30 --control.repo_id=$USER/test3  --control.episode=1
+
+######teleop#################
+python lerobot/scripts/control_robot.py  --control.type=teleoperate    --control.fps=30 
+
+
+
+######config motor########### 标0位跟修改ID
+python lerobot/scripts/configure_motor.py --port /dev/ttyACM0 --ID 1
+
+######绑定机械臂跟串口、插入一个 串口 执行 sudo dmesg | grep ttyACM 获取USB的编号
+sudo gedit /etc/udev/rules.d/feetech.rules 打开文件
+cdc_acm 1-12.2:1.0: ttyACM0: USB ACM device #####编号为 1-12.2:1.0
+填入
+KERNELS=="1-12.2:1.0" KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", MODE:="0777", GROUP:="dialout", SYMLINK+="leader_arm_left"
+以此类推 逐步将4个USB都插入 ，后续USB口不能换位置 
+

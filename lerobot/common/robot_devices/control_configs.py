@@ -15,14 +15,6 @@ from lerobot.configs.train import TrainPipelineConfig
 class ControlConfig(draccus.ChoiceRegistry):
     pass
 
-
-@ControlConfig.register_subclass("calibrate")
-@dataclass
-class CalibrateControlConfig(ControlConfig):
-    # List of arms to calibrate (e.g. `--arms='["left_follower","right_follower"]' left_leader`)
-    arms: list[str] | None = None
-
-
 @ControlConfig.register_subclass("teleoperate")
 @dataclass
 class TeleoperateControlConfig(ControlConfig):
@@ -53,9 +45,9 @@ class RecordControlConfig(ControlConfig):
     # Number of seconds before starting data collection. It allows the robot devices to warmup and synchronize.
     warmup_time_s: int | float = 10
     # Number of seconds for data recording for each episode.
-    episode_time_s: int | float = 60
+    episode_time_s: int | float = 6000
     # Number of seconds for resetting the environment after each episode.
-    reset_time_s: int | float = 60
+    reset_time_s: int | float = 6000
     # Number of episodes to record.
     num_episodes: int = 50
     # Encode frames in the dataset into video
@@ -85,7 +77,7 @@ class RecordControlConfig(ControlConfig):
     resume: bool = False
     # TODO(rcadene, aliberts): remove local_files_only when refactor with dataset as argument
     # Use local files only. By default, this script will try to fetch the dataset from the hub if it exists.
-    local_files_only: bool = False
+    local_files_only: bool = True
 
     def __post_init__(self):
         # HACK: We parse again the cli args here to get the pretrained path if there was one.

@@ -129,7 +129,6 @@ from pprint import pformat
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.robot_devices.control_configs import (
-    CalibrateControlConfig,
     ControlPipelineConfig,
     RecordControlConfig,
     ReplayControlConfig,
@@ -166,7 +165,7 @@ def teleoperate(robot: Robot, cfg: TeleoperateControlConfig):
         control_time_s=cfg.teleop_time_s,
         fps=cfg.fps,
         teleoperate=True,  # 启用遥操作模式
-        display_cameras=False,  # 是否显示摄像头画面
+        display_cameras=True,  # 是否显示摄像头画面
     )
 
 

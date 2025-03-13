@@ -122,8 +122,11 @@ def configure_motor(port,  model, motor_idx_des, baudrate_des):
         print("Present Position", motor_bus.read("Present_Position"))
         # motor_bus.write("Offset", 0)
         # motor_bus.write("Lock", 1)
-        time.sleep(4)
+        time.sleep(1)
         print("Offset", motor_bus.read("Offset"))
+        while True:
+            print("Present Position", motor_bus.read("Present_Position"))
+            time.sleep(1)
 
     except Exception as e:
         print(f"Error occurred during motor configuration: {e}")

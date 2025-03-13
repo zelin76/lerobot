@@ -61,7 +61,7 @@ class Fr3obotConfig :
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="/dev/ttyACM0",
+                serial_port="/dev/leader_arm_left",
                 ip_address=None,
                 motors={
                     # name: (index, model)
@@ -80,7 +80,7 @@ class Fr3obotConfig :
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="/dev/ttyACM1",
+                serial_port="/dev/gripper_left",
                 ip_address="192.168.58.2",
                 motors={
                     # name: (index, model)
