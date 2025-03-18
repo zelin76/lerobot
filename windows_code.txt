@@ -1,0 +1,1 @@
+ python lerobot/scripts/control_robot.py   --control.listen_port=9999 --control.type=record --control.fps=30 --control.repo_id=fr3/test3  --control.num_episodes=2  --control.single_task="Grasp a lego block and put it in the bin." 

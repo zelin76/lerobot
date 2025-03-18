@@ -44,24 +44,53 @@ class Fr3obotConfig :
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
     # the number of motors in your follower arms.
-    max_relative_target         = np.array([3, 3, 3, 3, 3, 3, 100])
+    max_relative_target         = np.array([5,5, 5, 5, 5, 5, 10])
     
     ##主从手臂关节的映射关系 方向、偏置、 比例
     leader_arm_encoder2deg      = 180.0 / 2048.0
     leader_arm_encoder_offset   = 2048
-    leader_arm_deg_offset       = np.array([0, -90, 0, 0, 0, 0])
-    leader_arm_dir              = np.array([1, 1, -1, -1, 1, 1])
-    follow_arm_limit_min        = np.array([-170, -260, -155, -260, -170, -170])
+
+    leader_arm_deg_offset : dict[str, np.array] = field(
+        default_factory=lambda: { 
+            "left" : np.array([-90, -90, 0, 0, 0, 0]),
+            "right": np.array([0, -90, 0, 0, 0, 0])
+        }
+    )
+    leader_arm_dir : dict[str, np.array] = field(
+        default_factory=lambda: {
+            "left" : np.array([1, 1, -1, -1, 1, -1]),
+            "right": np.array([1,  1, -1, -1, 1, -1])
+        }
+    )
+    follow_arm_limit_min        = np.array([-170, -150, -155, -260, -170, -170])
     follow_arm_limit_max        = np.array([170, 80, 155, 80, 170, 170])
 
     ##夹爪的编码器范围 完全闭合到完全张开的范围 用于将夹爪位置映射到 0~100
-    leader_gripper_encoder_range = [0, 2048] 
-    follow_gripper_encoder_range = [0, 2048]
-    
+    leader_gripper_encoder_range = [2048, 2900] 
+    follow_gripper_encoder_range : dict[str, list] = field(
+        default_factory=lambda: {
+            "left" : [2048, 2900],
+            "right": [2048, 1300]
+        }
+    )
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="/dev/leader_arm_left",
+                serial_port="COM9",#"/dev/leader_arm_left",
+                ip_address=None,
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan":  [1, "sts3215"],
+                    "shoulder_lift": [2, "sts3215"],
+                    "elbow_flex":    [3, "sts3215"],
+                    "wrist_flex":    [4, "sts3215"],
+                    "wrist_roll":    [5, "sts3215"],
+                    "wrist_yaw":     [6, "sts3215"],
+                    "gripper":       [7, "sts3215"]
+                },
+            ),
+            "right": MotorsBusConfig(
+                serial_port="COM8",#"/dev/leader_arm_right",
                 ip_address=None,
                 motors={
                     # name: (index, model)
@@ -80,8 +109,22 @@ class Fr3obotConfig :
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="/dev/gripper_left",
-                ip_address="192.168.58.2",
+                serial_port="COM6", # "/dev/gripper_left",
+                ip_address="192.168.57.3",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan":  [1, "fr3"],
+                    "shoulder_lift": [2, "fr3"],
+                    "elbow_flex":    [3, "fr3"],
+                    "wrist_flex":    [4, "fr3"],
+                    "wrist_roll":    [5, "fr3"],
+                    "wrist_yaw":     [6, "fr3"],
+                    "gripper":       [7, "sts3215"]
+                },
+            ),
+            "right": MotorsBusConfig(
+                serial_port="COM7", #"/dev/gripper_right",
+                ip_address="192.168.57.2",
                 motors={
                     # name: (index, model)
                     "shoulder_pan":  [1, "fr3"],
@@ -98,18 +141,18 @@ class Fr3obotConfig :
     
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
-            "stero": OpenCVCameraConfig(
-                camera_index=4,
+            "left": OpenCVCameraConfig(
+                camera_index=0,
                 fps=30,
                 width=640,
                 height=240,
             ),
-            "laptop": OpenCVCameraConfig(
-                camera_index=0,
+            "right": OpenCVCameraConfig(
+                camera_index=1,
                 fps=30,
-                width=320,
+                width=640,
                 height=240,
-            )
+            ),
         }
     )
 
@@ -130,7 +173,7 @@ class FairinoRobot:
         #follow arm 
         self.follower_arms : dict[str, FairinoArm] = {}
         for key, cfg in self.config.follower_arms.items():
-            self.follower_arms[key] = FairinoArm(cfg, self.config.follow_gripper_encoder_range)
+            self.follower_arms[key] = FairinoArm(cfg, self.config.follow_gripper_encoder_range[key])
 
         #cameras
         self.cameras = make_cameras_from_configs(self.config.cameras)
@@ -240,11 +283,11 @@ class FairinoRobot:
         align_position = np.clip(align_position, 0, 100)
         return align_position
     
-    def align_position(self, origin_position) :
+    def align_position(self, key, origin_position) :
         leadr_arm_position = origin_position[:-1]
         gripper_position =  self.align_gripper_position(origin_position[-1])
         leadr_arm_position = (leadr_arm_position - self.config.leader_arm_encoder_offset) * \
-                            self.config.leader_arm_encoder2deg * self.config.leader_arm_dir + self.config.leader_arm_deg_offset
+                            self.config.leader_arm_encoder2deg * self.config.leader_arm_dir[key] + self.config.leader_arm_deg_offset[key]
         
         leadr_arm_position = leadr_arm_position.clip(min=self.config.follow_arm_limit_min, \
                                                      max=self.config.follow_arm_limit_max)
@@ -262,20 +305,21 @@ class FairinoRobot:
         for name in self.leader_arms:
             before_lread_t = time.perf_counter()
             leader_pos[name] = self.leader_arms[name].read("Present_Position")
-            leader_pos[name] = self.align_position(leader_pos[name])
+            leader_pos[name] = self.align_position(name, leader_pos[name])
             leader_pos[name] = torch.from_numpy(leader_pos[name])
             self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
-
+        #print("leader ", leader_pos)
         # Send goal position to the follower
         follower_goal_pos = {}
         for name in self.follower_arms:
             before_fwrite_t = time.perf_counter()
             goal_pos = leader_pos[name]
-
+           
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.
             if self.config.max_relative_target is not None:
                 present_pos = self.follower_arms[name].getJointPos()
+                #print("present_pos ", present_pos)
                 present_pos = torch.from_numpy(present_pos)
                 goal_pos = ensure_safe_goal_position(goal_pos, present_pos, self.config.max_relative_target)
 

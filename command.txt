@@ -23,3 +23,9 @@ cdc_acm 1-12.2:1.0: ttyACM0: USB ACM device #####编号为 1-12.2:1.0
 KERNELS=="1-12.2:1.0" KERNEL=="ttyACM*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", MODE:="0777", GROUP:="dialout", SYMLINK+="leader_arm_left"
 以此类推 逐步将4个USB都插入 ，后续USB口不能换位置 
 
+
+
+########虚拟机械臂网口#############
+br-64f73bf110d6
+sudo ifconfig br-64f73bf110d6 down / up
+

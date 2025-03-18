@@ -264,8 +264,8 @@ def control_loop(
 
         dt_s = time.perf_counter() - start_loop_t
         loop_count = loop_count + 1
-        if loop_count % fps == 0 :
-            log_control_info(robot, dt_s, fps=fps)
+        # if loop_count % fps == 0 :
+        #     log_control_info(robot, dt_s, fps=fps)
         timestamp = time.perf_counter() - start_episode_t
         if events["exit_early"]:
             events["exit_early"] = False

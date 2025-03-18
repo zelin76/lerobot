@@ -255,7 +255,8 @@ class OpenCVCamera:
         #     # when other threads are used to save the images.
         #     
         cv2.setNumThreads(1)
-        camera_idx = f"/dev/video{self.camera_index}" if platform.system() == "Linux" else self.camera_index
+        #camera_idx = f"/dev/video{self.camera_index}" if platform.system() == "Linux" else self.camera_index
+        camera_idx = self.camera_index
         # First create a temporary camera trying to access `camera_index`,
         # and verify it is a valid camera by calling `isOpened`.
         tmp_camera = cv2.VideoCapture(camera_idx)

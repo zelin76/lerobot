@@ -104,8 +104,9 @@ class FairinoArm:
         pos = np.clip(pos, a_min=0, a_max=100)
         return pos
     def gripper_pos2encoder(self, pos):
-        encoder_pos = int((pos/100)*(self.gripper_encoder_range[1]-self.gripper_encoder_range[0])+self.gripper_encoder_range[0])
-        encoder_pos = np.clip(encoder_pos, a_min=self.gripper_encoder_range[0], a_max=self.gripper_encoder_range[1])
+        encoder_pos = int((pos / 100.0)*(self.gripper_encoder_range[1]-self.gripper_encoder_range[0])+self.gripper_encoder_range[0])
+        #encoder_pos = np.clip(encoder_pos, a_min=self.gripper_encoder_range[0], a_max=self.gripper_encoder_range[1])
+        #print("gripper", pos, encoder_pos)
         return encoder_pos
     
     def setJointPos(self, values: np.ndarray, cmd_T=0.02):

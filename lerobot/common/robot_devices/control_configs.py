@@ -26,12 +26,19 @@ class TeleoperateControlConfig(ControlConfig):
 
 
 @ControlConfig.register_subclass("record")
+
 @dataclass
 class RecordControlConfig(ControlConfig):
+    
     # Dataset identifier. By convention it should match '{hf_username}/{dataset_name}' (e.g. `lerobot/test`).
     repo_id: str
     # A short but accurate description of the task performed during the recording (e.g. "Pick the Lego block and drop it in the box on the right.")
     single_task: str
+    
+    # Server communication parameters for record_server mode
+    record_role: str = "server"  # 'server' or 'client'
+    listen_ip: str = "0.0.0.0"   # IP to listen on for server mode
+    listen_port: int = 9999      # Port to listen on for server mode
     # Root directory where the dataset will be stored (e.g. 'dataset/path').
     root: str | Path | None = None
     policy: PreTrainedConfig | None = None
