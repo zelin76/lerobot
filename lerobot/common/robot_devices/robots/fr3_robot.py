@@ -172,11 +172,12 @@ class FairinoRobot:
                 self.leader_arms[key] = FeetechMotorsBus(cfg)
         #follow arm 
         self.follower_arms : dict[str, FairinoArm] = {}
-        for key, cfg in self.config.follower_arms.items():
-            self.follower_arms[key] = FairinoArm(cfg, self.config.follow_gripper_encoder_range[key])
-
-        #cameras
-        self.cameras = make_cameras_from_configs(self.config.cameras)
+        self.cameras = {}
+        if not teleop_mode:
+            for key, cfg in self.config.follower_arms.items():
+                self.follower_arms[key] = FairinoArm(cfg, self.config.follow_gripper_encoder_range[key])
+            #cameras
+            self.cameras = make_cameras_from_configs(self.config.cameras)
 
         self.is_connected = False
         self.logs = {}
@@ -292,6 +293,15 @@ class FairinoRobot:
         leadr_arm_position = leadr_arm_position.clip(min=self.config.follow_arm_limit_min, \
                                                      max=self.config.follow_arm_limit_max)
         return np.append(leadr_arm_position, gripper_position)
+    
+    def get_leader_pos(self) -> dict[str, np.ndarray] :
+        leader_pos = {}
+        for name in self.leader_arms:
+            before_lread_t = time.perf_counter()
+            leader_pos[name] = self.leader_arms[name].read("Present_Position")
+            leader_pos[name] = self.align_position(name, leader_pos[name])
+            self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
+        return leader_pos
     
     def teleop_step(
         self, record_data=False, DT=0.02

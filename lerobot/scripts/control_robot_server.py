@@ -14,6 +14,7 @@ python lerobot/scripts/control_robot_server.py \
     --control.repo_id=fr3/test3 \
     --control.num_episodes=2 \
     --control.single_task="grasp."
+python lerobot/scripts/control_robot_server.py --control.type=server_record --control.listen_port=9999 --control.fps=30 --control.repo_id=fr3/test3 --control.num_episodes=2 --control.single_task="grasp."
 ```
 """
 
@@ -23,6 +24,7 @@ import time
 import json
 import numpy as np
 import torch
+import select
 from dataclasses import asdict, dataclass
 from pprint import pformat
 
@@ -66,20 +68,32 @@ def server_record(
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind(('0.0.0.0', cfg.listen_port))
-    server_socket.listen(1)
-    
+    server_socket.listen(5)
+    server_socket.setblocking(False)
+    client_socket = None
     logging.info(f"Server listening on port {cfg.listen_port}")
     
     try:
+        listener, events = init_keyboard_listener()
         # Wait for client connection
         logging.info("Waiting for client connection...")
-        client_socket, client_address = server_socket.accept()
-        logging.info(f"Client connected from {client_address}")
-        
+        # 使用 select 函数监听所有连接的 client_socket
+        while client_socket is None :
+            readable_sockets, _, _ = select.select([server_socket], [], [], 1)
+            print("readable socket ", readable_sockets)
+            # 处理所有可读的 socket
+            for sock in readable_sockets:
+                # 如果是 server_socket 表示有新的连接
+                if sock is server_socket:
+                    client_socket, client_address = server_socket.accept()
+                    logging.info(f"Client connected from {client_address}")
+                    break
+
         # Receive initial configuration from client
+        readable_sockets, _, _ = select.select([client_socket], [], [], 10)
         init_config_data = client_socket.recv(1024).decode('utf-8')
         init_config = json.loads(init_config_data)
-        
+        print("recv client init config:",init_config)
         # Acknowledge receipt
         client_socket.sendall("ACK".encode('utf-8'))
         
@@ -97,11 +111,13 @@ def server_record(
         
         # Main recording loop
         episode_count = 0
-        listener, events = init_keyboard_listener()
+        
         
         # Process episodes until we reach the target number or stop recording
         while episode_count < cfg.num_episodes and not events["stop_recording"]:
             # Wait for episode start marker from client
+            # 使用 select 函数监听所有连接的 client_socket
+            _, _, _ = select.select([client_socket], [], [], 1)
             start_signal = client_socket.recv(1024).decode('utf-8')
             if start_signal != "START_EPISODE":
                 if start_signal == "CLOSE":
@@ -124,6 +140,7 @@ def server_record(
                 
                 # Receive data from client
                 try:
+                    _, _, _ = select.select([client_socket], [], [], 1)
                     data = client_socket.recv(4096).decode('utf-8')
                     if not data:
                         logging.warning("Client disconnected")
@@ -152,29 +169,31 @@ def server_record(
                     
                     # Send action to robot
                     robot.send_action(action)
-                    
+                    #print("test:", action)
                     # Capture current observation including camera images and follower arm positions
                     observation = robot.capture_observation()
                     
-                    # Add leader arm positions to the observation for recording
-                    # Create a new tensor that combines leader arm data for recording
-                    leader_state = []
-                    for name in leader_pos:
-                        leader_state.append(leader_pos[name])
-                    if leader_state:
-                        leader_state_tensor = torch.cat(leader_state)
-                        # Add to observation dict with a custom key for leader arms
-                        observation["observation.leader_state"] = leader_state_tensor
+                    # # Add leader arm positions to the observation for recording
+                    # # Create a new tensor that combines leader arm data for recording
+                    # leader_state = []
+                    # for name in leader_pos:
+                    #     leader_state.append(leader_pos[name])
+                    # if leader_state:
+                    #     leader_state_tensor = torch.cat(leader_state)
+                    #     # Add to observation dict with a custom key for leader arms
+                    #     observation["observation.leader_state"] = leader_state_tensor
                     
                     # Prepare action dict
                     action_dict = {"action": action}
                     
                     # Add frame to dataset
-                    dataset.add_frame(observation, action_dict)
+                    frame = {**observation, **action_dict}
+                    dataset.add_frame(frame)
                     
                     # Acknowledge receipt to client
+                    print("sent ack 1......")
                     client_socket.sendall("ACK".encode('utf-8'))
-                    
+                    print("sent ack 2......")
                     # Control FPS
                     elapsed_time = time.perf_counter() - start_frame_time
                     busy_wait(1.0/cfg.fps - elapsed_time)

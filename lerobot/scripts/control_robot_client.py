@@ -6,19 +6,13 @@ the joint positions data to the server via socket connection.
 
 Example usage:
 ```bash
-python lerobot/scripts/control_robot_client.py \
-    --control.type=client_record \
-    --control.listen_ip=10.0.0.24 \
-    --control.listen_port=9999 \
-    --control.fps=30 \
-    --control.repo_id=fr3/test3 \
-    --control.num_episodes=2 \
-    --control.single_task="grasp."
+python lerobot/scripts/control_robot_client.py     --control.type=client_record     --control.listen_ip=10.0.0.24    --control.listen_port=9999   --control.fps=30     --control.repo_id=fr3/test3     --control.num_episodes=2     --control.single_task="grasp."
 ```
 """
 
 import logging
 import socket
+import select
 import time
 import json
 import numpy as np
@@ -66,11 +60,13 @@ def client_record(
     logging.info(f"Connecting to server at {cfg.listen_ip}:{cfg.listen_port}")
     
     try:
+        listener, events = init_keyboard_listener()
         client_socket.connect((cfg.listen_ip, cfg.listen_port))
+        client_socket.setblocking(False)
         logging.info("Connected to server successfully")
         
         # Initialize keyboard listener for control flow
-        listener, events = init_keyboard_listener()
+        
         
         # Send initial configuration to server
         init_config = {
@@ -82,6 +78,7 @@ def client_record(
         client_socket.sendall(json.dumps(init_config).encode('utf-8'))
         
         # Wait for server acknowledgment
+        readable_sockets, _, _ = select.select([client_socket], [], [], 1)
         response = client_socket.recv(1024).decode('utf-8')
         if response != "ACK":
             logging.error(f"Server did not acknowledge: {response}")
@@ -105,6 +102,8 @@ def client_record(
                 start_frame_time = time.perf_counter()
                 
                 # Read leader arm positions
+                leader_pos = robot.get_leader_pos()
+
                 leader_pos = {}
                 for name in robot.leader_arms:
                     leader_pos[name] = robot.leader_arms[name].read("Present_Position")
@@ -116,12 +115,14 @@ def client_record(
                     "leader_pos": {k: v.tolist() for k, v in leader_pos.items()}
                 }
                 client_socket.sendall(json.dumps(data_to_send).encode('utf-8'))
-                
+                print("sent:",data_to_send)
                 # Receive acknowledgment from server
+                readable_sockets, _, _ = select.select([client_socket], [], [], 10)
+                
                 ack = client_socket.recv(1024).decode('utf-8')
                 if ack != "ACK":
                     logging.warning(f"Unexpected server response: {ack}")
-                
+                print("recv:",ack)
                 # Control FPS
                 elapsed_time = time.perf_counter() - start_frame_time
                 busy_wait(1.0/cfg.fps - elapsed_time)
@@ -140,6 +141,7 @@ def client_record(
             client_socket.sendall("END_EPISODE".encode('utf-8'))
             
             # Wait for server to be ready for next episode
+            readable_sockets, _, _ = select.select([client_socket], [], [], 1)
             ready = client_socket.recv(1024).decode('utf-8')
             if ready != "READY":
                 logging.error(f"Server not ready for next episode: {ready}")

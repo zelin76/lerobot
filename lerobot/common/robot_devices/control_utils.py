@@ -146,6 +146,9 @@ def init_keyboard_listener():
                 print("Escape key pressed. Stopping data recording...")
                 events["stop_recording"] = True
                 events["exit_early"] = True
+            elif key == keyboard.Key.f1:
+                print("F1 key pressed.force exit...")
+                exit()
         except Exception as e:
             print(f"Error handling key press: {e}")
 
