@@ -43,7 +43,7 @@ from lerobot.configs import parser
 class ClientControlConfig(RecordControlConfig):
     """Configuration for client control mode."""
     listen_ip: str = "localhost"  # IP of the server to connect to
-    listen_port: int = 9999      # Port of the server to connect to
+    listen_port: int = 8989      # Port of the server to connect to
 
 
 @safe_disconnect
@@ -78,7 +78,7 @@ def client_record(
         client_socket.sendall(json.dumps(init_config).encode('utf-8'))
         
         # Wait for server acknowledgment
-        readable_sockets, _, _ = select.select([client_socket], [], [], 1)
+        readable_sockets, _, _ = select.select([client_socket], [], [], 10)
         response = client_socket.recv(1024).decode('utf-8')
         if response != "ACK":
             logging.error(f"Server did not acknowledge: {response}")
@@ -103,34 +103,28 @@ def client_record(
                 
                 # Read leader arm positions
                 leader_pos = robot.get_leader_pos()
-
-                leader_pos = {}
-                for name in robot.leader_arms:
-                    leader_pos[name] = robot.leader_arms[name].read("Present_Position")
-                    leader_pos[name] = robot.align_position(name, leader_pos[name])
-                
+ 
                 # Convert to JSON and send
                 data_to_send = {
                     "frame_count": frame_count,
                     "leader_pos": {k: v.tolist() for k, v in leader_pos.items()}
                 }
                 client_socket.sendall(json.dumps(data_to_send).encode('utf-8'))
-                print("sent:",data_to_send)
+                #print("sent:",data_to_send)
                 # Receive acknowledgment from server
                 readable_sockets, _, _ = select.select([client_socket], [], [], 10)
-                
                 ack = client_socket.recv(1024).decode('utf-8')
                 if ack != "ACK":
                     logging.warning(f"Unexpected server response: {ack}")
-                print("recv:",ack)
                 # Control FPS
                 elapsed_time = time.perf_counter() - start_frame_time
                 busy_wait(1.0/cfg.fps - elapsed_time)
-                
-                dt_s = time.perf_counter() - start_frame_time
-                log_control_info(robot, dt_s, fps=cfg.fps)
-                
+
                 frame_count += 1
+
+                dt_s = time.perf_counter() - start_frame_time
+                if frame_count % (cfg.fps * 2) == 0 :
+                    log_control_info(robot, dt_s, fps=cfg.fps)
                 
                 # Check if episode time exceeded
                 if cfg.episode_time_s is not None and time.perf_counter() - start_episode_time > cfg.episode_time_s:
@@ -139,9 +133,9 @@ def client_record(
             
             # Send episode end marker
             client_socket.sendall("END_EPISODE".encode('utf-8'))
-            
+            print("Waiting for server save data ready ....")
             # Wait for server to be ready for next episode
-            readable_sockets, _, _ = select.select([client_socket], [], [], 1)
+            readable_sockets, _, _ = select.select([client_socket], [], [], 100)
             ready = client_socket.recv(1024).decode('utf-8')
             if ready != "READY":
                 logging.error(f"Server not ready for next episode: {ready}")

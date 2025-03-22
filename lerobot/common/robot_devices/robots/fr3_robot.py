@@ -52,8 +52,8 @@ class Fr3obotConfig :
 
     leader_arm_deg_offset : dict[str, np.array] = field(
         default_factory=lambda: { 
-            "left" : np.array([-90, -90, 0, 0, 0, 0]),
-            "right": np.array([0, -90, 0, 0, 0, 0])
+            "left" : np.array([-45, -90, 0, -90, 0, 0]),
+            "right": np.array([-45, -90, 0, -90, 0, 0])
         }
     )
     leader_arm_dir : dict[str, np.array] = field(
@@ -76,7 +76,7 @@ class Fr3obotConfig :
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="COM9",#"/dev/leader_arm_left",
+                serial_port="/dev/leader_arm_left",
                 ip_address=None,
                 motors={
                     # name: (index, model)
@@ -86,11 +86,12 @@ class Fr3obotConfig :
                     "wrist_flex":    [4, "sts3215"],
                     "wrist_roll":    [5, "sts3215"],
                     "wrist_yaw":     [6, "sts3215"],
-                    "gripper":       [7, "sts3215"]
+                    "gripper":       [7, "sts3215"],
+                    "head_yaw":      [8, "sts3215"]
                 },
             ),
             "right": MotorsBusConfig(
-                serial_port="COM8",#"/dev/leader_arm_right",
+                serial_port="/dev/leader_arm_right",
                 ip_address=None,
                 motors={
                     # name: (index, model)
@@ -109,7 +110,7 @@ class Fr3obotConfig :
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="COM6", # "/dev/gripper_left",
+                serial_port="/dev/gripper_left",
                 ip_address="192.168.57.3",
                 motors={
                     # name: (index, model)
@@ -123,7 +124,7 @@ class Fr3obotConfig :
                 },
             ),
             "right": MotorsBusConfig(
-                serial_port="COM7", #"/dev/gripper_right",
+                serial_port="/dev/gripper_right",
                 ip_address="192.168.57.2",
                 motors={
                     # name: (index, model)
@@ -138,17 +139,33 @@ class Fr3obotConfig :
             ),
         }
     )
-    
+    head_config = MotorsBusConfig(
+        serial_port="/dev/head_yaw",
+        ip_address=None,
+        motors={
+            # name: (index, model)
+            "head":  [1, "sts3215"]
+        },
+    )
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
             "left": OpenCVCameraConfig(
                 camera_index=0,
+                camera_port="/dev/camera_left",
                 fps=30,
                 width=640,
                 height=240,
             ),
             "right": OpenCVCameraConfig(
                 camera_index=1,
+                camera_port="/dev/camera_right",
+                fps=30,
+                width=640,
+                height=240,
+            ),
+            "head": OpenCVCameraConfig(
+                camera_index=1,
+                camera_port="/dev/camera_head",
                 fps=30,
                 width=640,
                 height=240,
@@ -173,9 +190,11 @@ class FairinoRobot:
         #follow arm 
         self.follower_arms : dict[str, FairinoArm] = {}
         self.cameras = {}
+        self.head_motor = None
         if not teleop_mode:
             for key, cfg in self.config.follower_arms.items():
                 self.follower_arms[key] = FairinoArm(cfg, self.config.follow_gripper_encoder_range[key])
+            self.head_motor = FeetechMotorsBus(self.config.head_config)
             #cameras
             self.cameras = make_cameras_from_configs(self.config.cameras)
 
@@ -183,7 +202,9 @@ class FairinoRobot:
         self.logs = {}
 
     def get_motor_names(self, arm: dict[str, MotorsBus]) -> list:
-        return [f"{arm}_{motor}" for arm, bus in arm.items() for motor in bus.motors]
+        motor_name : list = [f"{arm}_{motor}" for arm, bus in arm.items() for motor in bus.motors]
+        motor_name.append("head_yaw")
+        return motor_name
 
     @property
     def camera_features(self) -> dict:
@@ -270,10 +291,16 @@ class FairinoRobot:
 
         for name in self.leader_arms:
             self.leader_arms[name].read("Present_Position")
-
+        
+        if self.head_motor :
+            print("connect head motor")
+            self.head_motor.connect()
+            self.head_motor.write("Torque_Enable", TorqueMode.DISABLED.value)
+            self.head_motor.read("Present_Position")
         # Connect the cameras
         for name in self.cameras:
             self.cameras[name].connect()
+            
 
         self.is_connected = True
         print("fr3 robot init done...")
@@ -282,6 +309,15 @@ class FairinoRobot:
         align_position = (gripper_position - self.config.leader_gripper_encoder_range[0]) * 100 \
                          / (self.config.leader_gripper_encoder_range[1] - self.config.leader_gripper_encoder_range[0])
         align_position = np.clip(align_position, 0, 100)
+        return align_position
+    
+    def head_motor_encoder2position(self, head_position):
+        align_position = (head_position - self.config.leader_arm_encoder_offset) * \
+                    self.config.leader_arm_encoder2deg
+        return align_position
+    
+    def head_motor_position2encoder(self, head_position):
+        align_position = head_position / self.config.leader_arm_encoder2deg + self.config.leader_arm_encoder_offset
         return align_position
     
     def align_position(self, key, origin_position) :
@@ -296,11 +332,16 @@ class FairinoRobot:
     
     def get_leader_pos(self) -> dict[str, np.ndarray] :
         leader_pos = {}
+        head_motor_pos : np.ndarray
         for name in self.leader_arms:
             before_lread_t = time.perf_counter()
             leader_pos[name] = self.leader_arms[name].read("Present_Position")
+            if name == "left" :
+                head_motor_pos = self.head_motor_encoder2position(leader_pos[name][ 7 : 8]) * -1
+                leader_pos[name] = leader_pos[name][ : -1]
             leader_pos[name] = self.align_position(name, leader_pos[name])
             self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
+        leader_pos["head"] = head_motor_pos
         return leader_pos
     
     def teleop_step(
@@ -311,13 +352,9 @@ class FairinoRobot:
                 "ManipulatorRobot is not connected. You need to run `robot.connect()`."
             )
         # Prepare to assign the position of the leader to the follower
-        leader_pos = {}
-        for name in self.leader_arms:
-            before_lread_t = time.perf_counter()
-            leader_pos[name] = self.leader_arms[name].read("Present_Position")
-            leader_pos[name] = self.align_position(name, leader_pos[name])
+        leader_pos = self.get_leader_pos()
+        for name in leader_pos:
             leader_pos[name] = torch.from_numpy(leader_pos[name])
-            self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
         #print("leader ", leader_pos)
         # Send goal position to the follower
         follower_goal_pos = {}
@@ -339,7 +376,10 @@ class FairinoRobot:
             
             self.follower_arms[name].setJointPos(goal_pos, cmd_T=DT)
             self.logs[f"write_follower_{name}_goal_pos_dt_s"] = time.perf_counter() - before_fwrite_t
-
+        head_pos = leader_pos["head"].numpy().astype(np.int32)
+        head_pos = self.head_motor_position2encoder(head_pos)
+        head_pos = head_pos.astype(np.int32)
+        self.head_motor.write("Goal_Position", self.head_motor_position2encoder(head_pos))
         # Early exit when recording data is not requested
         if not record_data:
             return
@@ -349,6 +389,7 @@ class FairinoRobot:
         for name in self.follower_arms:
             if name in follower_goal_pos:
                 action.append(follower_goal_pos[name])
+        action.append(head_pos)
         action = torch.cat(action)
 
         # Populate output dictionnaries
@@ -371,13 +412,15 @@ class FairinoRobot:
             follower_pos[name] = self.follower_arms[name].getJointPos()
             follower_pos[name] = torch.from_numpy(follower_pos[name])
             self.logs[f"read_follower_{name}_pos_dt_s"] = time.perf_counter() - before_fread_t
-
+        if self.head_motor :
+            follower_pos["head"] = self.head_motor_encoder2position(self.head_motor.read("Present_Position"))
+            follower_pos["head"] = torch.from_numpy(follower_pos["head"])
         # Create state by concatenating follower current position
         state = []
         for name in self.follower_arms:
             if name in follower_pos:
                 state.append(follower_pos[name])
- 
+        state.append(follower_pos["head"])
         state = torch.cat(state)
 
         # Capture images from cameras
@@ -429,7 +472,11 @@ class FairinoRobot:
             # Send goal position to each follower
             goal_pos = goal_pos.numpy().astype(np.int32)
             self.follower_arms[name].setJointPos(goal_pos, cmd_T=DT)
-
+        head_pos = action[from_idx : from_idx+1]
+        action_sent.append(head_pos)
+        head_pos = self.head_motor_position2encoder(head_pos)
+        head_pos = head_pos.numpy().astype(np.int32)
+        self.head_motor.write("Goal_Position", head_pos)
         return torch.cat(action_sent)
 
     def print_logs(self):
@@ -451,6 +498,8 @@ class FairinoRobot:
         for name in self.cameras:
             self.cameras[name].disconnect()
 
+        if self.head_motor :
+            self.head_motor.disconnect()
         self.is_connected = False
 
     def __del__(self):

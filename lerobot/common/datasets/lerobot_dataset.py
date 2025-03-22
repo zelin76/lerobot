@@ -68,7 +68,7 @@ from lerobot.common.robot_devices.robots.utils import Robot
 
 # For maintainers, see lerobot/common/datasets/push_dataset_to_hub/CODEBASE_VERSION.md
 CODEBASE_VERSION = "v2.0"
-LEROBOT_HOME = Path(os.getenv("LEROBOT_HOME", "D:/git/lerobot/outputs/dataset")).expanduser()
+LEROBOT_HOME = Path(os.getenv("LEROBOT_HOME", "outputs/dataset")).expanduser()
 
 
 class LeRobotDatasetMetadata:
@@ -76,7 +76,7 @@ class LeRobotDatasetMetadata:
         self,
         repo_id: str,
         root: str | Path | None = None,
-        local_files_only: bool = False,
+        local_files_only: bool = True,
     ):
         self.repo_id = repo_id
         self.root = Path(root) if root is not None else LEROBOT_HOME / repo_id

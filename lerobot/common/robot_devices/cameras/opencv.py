@@ -216,14 +216,15 @@ class OpenCVCamera:
 
         # Linux uses ports for connecting to cameras
         if platform.system() == "Linux":
-            if isinstance(self.camera_index, int):
-                self.port = Path(f"/dev/video{self.camera_index}")
-            elif isinstance(self.camera_index, str) and is_valid_unix_path(self.camera_index):
-                self.port = Path(self.camera_index)
-                # Retrieve the camera index from a potentially symlinked path
-                self.camera_index = get_camera_index_from_unix_port(self.port)
-            else:
-                raise ValueError(f"Please check the provided camera_index: {self.camera_index}")
+            self.camera_index = config.camera_port
+            # if isinstance(self.camera_index, int):
+            #     self.port = Path(f"/dev/video{self.camera_index}")
+            # elif isinstance(self.camera_index, str) and is_valid_unix_path(self.camera_index):
+            #     self.port = Path(self.camera_index)
+            #     # Retrieve the camera index from a potentially symlinked path
+            #     self.camera_index = get_camera_index_from_unix_port(self.port)
+            # else:
+            #     raise ValueError(f"Please check the provided camera_index: {self.camera_index}")
 
         self.fps = config.fps
         self.width = config.width
@@ -259,6 +260,7 @@ class OpenCVCamera:
         camera_idx = self.camera_index
         # First create a temporary camera trying to access `camera_index`,
         # and verify it is a valid camera by calling `isOpened`.
+        print("open camera", camera_idx)
         tmp_camera = cv2.VideoCapture(camera_idx)
         is_camera_open = tmp_camera.isOpened()
         # Release camera to make it accessible for `find_camera_indices`
@@ -315,7 +317,7 @@ class OpenCVCamera:
         self.height = round(actual_height)
 
         self.is_connected = True
-        print(f"connect opencv camera /dev/video{self.camera_index} width{self.width} height{self.height} fps{self.fps}")
+        print(f"connect opencv camera {self.camera_index} width{self.width} height{self.height} fps{self.fps}")
 
     def read(self, temporary_color_mode: str | None = None) -> np.ndarray:
         """Read a frame from the camera returned in the format (height, width, channels)

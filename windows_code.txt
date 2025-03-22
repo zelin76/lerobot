@@ -1,5 +1,8 @@
 Robot
- python lerobot/scripts/control_robot_server.py   --control.listen_port=9999 --control.type=server_record --control.fps=30 --control.repo_id=fr3/test3  --control.num_episodes=2  --control.single_task="Grasp." 
+python lerobot/scripts/control_robot_server.py   --control.listen_port=8989 --control.type=server_record 
 
 Leader
-python lerobot/scripts/control_robot_client.py --control.type=client_record --control.listen_ip=127.0.0.1 --control.listen_port=9999  --control.fps=30  --control.repo_id=fr3/test3  --control.num_episodes=2   --control.single_task="grasp."
+python lerobot/scripts/control_robot_client.py --control.type=client_record --control.listen_ip=10.0.0.24 --control.listen_port=8989  --control.fps=30  --control.repo_id=fr3/test3  --control.num_episodes=2   --control.single_task="grasp."
+
+train
+python lerobot/scripts/train.py --dataset.repo_id=fr3/test3 --save_freq=2000  --dataset.local_files_only=true --policy.type=act --output_dir=outputs/train/fr3 --device=cuda

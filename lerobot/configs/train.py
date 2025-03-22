@@ -141,7 +141,7 @@ class TrainPipelineConfig(HubMixin):
         proxies: dict | None = None,
         token: str | bool | None = None,
         cache_dir: str | Path | None = None,
-        local_files_only: bool = False,
+        local_files_only: bool = True ,
         revision: str | None = None,
         **kwargs,
     ) -> "TrainPipelineConfig":

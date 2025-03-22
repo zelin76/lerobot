@@ -24,7 +24,7 @@ class OpenCVCameraConfig(CameraConfig):
     OpenCVCameraConfig(0, 30, 1280, 720)
     ```
     """
-
+    camera_port: str ##for linx 
     camera_index: int
     fps: int | None = None
     width: int | None = None
