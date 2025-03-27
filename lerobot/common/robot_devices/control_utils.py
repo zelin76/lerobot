@@ -122,7 +122,7 @@ def init_keyboard_listener():
     events["exit_early"] = False
     events["rerecord_episode"] = False
     events["stop_recording"] = False
-
+    events["exit_infer"] = False
     if is_headless():
         logging.warning(
             "Headless environment detected. On-screen cameras display and keyboard inputs will not be available."
@@ -146,6 +146,7 @@ def init_keyboard_listener():
                 print("Escape key pressed. Stopping data recording...")
                 events["stop_recording"] = True
                 events["exit_early"] = True
+                events["exit_infer"] = True
             elif key == keyboard.Key.f1:
                 print("F1 key pressed.force exit...")
                 exit()

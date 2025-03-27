@@ -6,3 +6,6 @@ python lerobot/scripts/control_robot_client.py --control.type=client_record --co
 
 train
 python lerobot/scripts/train.py --dataset.repo_id=fr3/test3 --save_freq=2000  --dataset.local_files_only=true --policy.type=act --output_dir=outputs/train/fr3 --device=cuda
+
+infer
+python lerobot/scripts/infer.py --device=cuda  --policy.path=outputs/train/test3/checkpoints/last/pretrained_model
