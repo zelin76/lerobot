@@ -422,6 +422,7 @@ class FairinoRobot:
                 state.append(follower_pos[name])
         state.append(follower_pos["head"])
         state = torch.cat(state)
+        state = state.type(torch.float32)
 
         # Capture images from cameras
         images = {}

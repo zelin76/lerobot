@@ -58,7 +58,7 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, fps: int, device
         # Caution ！！！ make sure the pred action is in reasonable range before send_action
         # Caution ！！！ make sure the pred action is in reasonable range before send_action
         
-        # action = robot.send_action(pred_action)
+        action = robot.send_action(pred_action)
         print(pred_action)
         
         if fps is not None:

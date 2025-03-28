@@ -100,7 +100,6 @@ def predict_action(observation, policy, device, use_amp):
                 observation[name] = observation[name].permute(2, 0, 1).contiguous()
             observation[name] = observation[name].unsqueeze(0)
             observation[name] = observation[name].to(device)
-
         # Compute the next action with the policy
         # based on the current observation
         action = policy.select_action(observation)
