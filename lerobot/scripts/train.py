@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import time
 from contextlib import nullcontext
 from pprint import pformat
@@ -50,6 +51,8 @@ from lerobot.common.utils.utils import (
 from lerobot.common.utils.wandb_utils import WandBLogger
 from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
+from lerobot.common.policies.act.configuration_act import ACTConfig
+from lerobot.configs.default import DatasetConfig
 from lerobot.scripts.eval import eval_policy
 
 
@@ -153,7 +156,8 @@ def train(cfg: TrainPipelineConfig):
 
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     num_total_params = sum(p.numel() for p in policy.parameters())
-
+    if cfg.resume:
+         logging.info(colored("Resume with policy:", "yellow", attrs=["bold"]) + f" {cfg.checkpoint_path}")
     logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
     if cfg.env is not None:
         logging.info(f"{cfg.env.task=}")
@@ -279,6 +283,31 @@ def train(cfg: TrainPipelineConfig):
     if eval_env:
         eval_env.close()
     logging.info("End of training")
+
+def train_with_config(repo_id: str, output_dir: str, pretrained_path: str | None = None, train_steps: int = 100000, save_freq: int = 2000 ):
+    if pretrained_path==None :
+        cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=repo_id),
+                            policy=ACTConfig(),
+                            device='cuda',
+                            output_dir=output_dir,
+                            steps=train_steps,
+                            save_freq=save_freq
+                            )
+    else :
+        pretrained_path = os.path.join(pretrained_path, "pretrained_model/train_config.json")
+        cfg = TrainPipelineConfig.from_pretrained(pretrained_name_or_path=pretrained_path, 
+                                                  cli_args={
+                                                      '--dataset.repo_id=' + repo_id,
+                                                      '--resume=true',
+                                                      '--save_freq='+str(save_freq),
+                                                      '--steps='+str(train_steps),
+                                                      '--policy.type=act',
+                                                      '--output_dir=' + output_dir,
+                                                      "--pretrained_path=" + pretrained_path,
+                                                      '--device=cuda'
+                                                  })
+        
+    train(cfg)
 
 
 if __name__ == "__main__":
