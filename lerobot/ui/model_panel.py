@@ -20,15 +20,18 @@ from lerobot.configs.policies import PreTrainedConfig
 models_dir = "outputs/train" #dont change 
 dataset_dir = "outputs/dataset" #dont change 
 
+# to select
 current_policy:PreTrainedPolicy=None
 current_data_name:str=None
 current_model_path:str=None
 
+#for multiprocessing para
+model_name:str = "test"
+save_frequence:int =20000
+
 class ModelPanel(QWidget):
     model_loaded = pyqtSignal(str)  # Signal emitted when model is loaded
-    #def __reduce__(self):
-    #    return (self.__class__,(self.arg1, self.arg2))
-    
+   
     def __init__(self):
         super().__init__()
         
@@ -124,10 +127,14 @@ class ModelPanel(QWidget):
         self.add_button.clicked.connect(self.handle_model_create)
         self.save_button.clicked.connect(self.save_model)
         self.train_button.clicked.connect(self.train_model)
+        self.mn_input.textChanged.connect(self.update_info)
         
         # Connect signals
         self.load_button.clicked.connect( self.handle_model_load)
         self.train_button.clicked.connect( self.handle_model_train )
+    def update_info(self):
+        model_name=self.mn_input.toPlainText()
+        save_frequence=int(self.sf_input.toPlainText())
         
         
     def refresh_datasets_dir(self):
@@ -175,19 +182,26 @@ class ModelPanel(QWidget):
         #    item.takeChildren()  # Clear any existing subitems
         #    for data_item in os.listdir(current_data_path):
         #        QTreeWidgetItem(item, [data_item])
-    
-    def create_model(self):
+    @staticmethod
+    def create_model():
         cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_name))
         cfg.policy=ACTConfig()
-        cfg.output_dir=current_model_path+self.mn_input.toPlainText()
-        cfg.save_freq=int(self.sf_input.toPlainText())
+        cfg.output_dir=models_dir+model_name #self.mn_input.toPlainText()
+        cfg.save_freq=save_frequence # int(self.sf_input.toPlainText())
         train(cfg)
-        self.refresh_model_dir()
+        #self.refresh_model_dir()
 
     def handle_model_create(self):
-        self.process=multiprocessing.Process(target=self.create_model)
+        #self.create_model()
+        self.process=multiprocessing.Process(target=test_fun)
         self.process.start()
-
+        #self.add_button.setEnabled(False)
+        #cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_name))
+        #cfg.policy=ACTConfig()
+        #cfg.output_dir=models_dir+model_name #self.mn_input.toPlainText()
+        #cfg.save_freq=save_frequence # int(self.sf_input.toPlainText())
+        #train(cfg)
+        #self.add_button.setEnabled(True)
         
     
     def handle_model_load(self):
@@ -318,25 +332,26 @@ class ModelPanel(QWidget):
                 f"Failed to train model: {str(e)}"
             )
             return False
-
-    def test_fun():
-        current_data_path="test10"
-        cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_path))
-        cfg.policy=ACTConfig() 
-        cfg.output_dir="outputs/train/test10"
-        train(cfg)
-
+        
+def test_fun():
+    cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_name))
+    cfg.policy=ACTConfig()
+    cfg.output_dir=models_dir+model_name #self.mn_input.toPlainText()
+    cfg.save_freq=save_frequence # int(self.sf_input.toPlainText())
+    train(cfg)
+    
 def main():
+
     current_data_path="test10"
     cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_path))
     cfg.policy=ACTConfig() 
+    cfg.dataset.local_files_only=True
     cfg.output_dir="outputs/train/test10"
     #train(cfg)
-    process=multiprocessing.process(target=ModelPanel.test_fun)
+    
+    model_name="test4"
+    process=multiprocessing.Process(target=test_fun)
     process.start()
-
     
-    
-    print("jaja")
 if __name__ == "__main__":
     main()        
