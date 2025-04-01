@@ -70,13 +70,13 @@ class Fr3obotConfig :
     follow_gripper_encoder_range : dict[str, list] = field(
         default_factory=lambda: {
             "left" : [2048, 2900],
-            "right": [2048, 1300]
+            "right": [2048, 2900]
         }
     )
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "left": MotorsBusConfig(
-                serial_port="/dev/leader_arm_left",
+                serial_port="COM7",#"/dev/leader_arm_left",
                 ip_address=None,
                 motors={
                     # name: (index, model)
@@ -91,7 +91,7 @@ class Fr3obotConfig :
                 },
             ),
             "right": MotorsBusConfig(
-                serial_port="/dev/leader_arm_right",
+                serial_port="COM9",#"/dev/leader_arm_right",
                 ip_address=None,
                 motors={
                     # name: (index, model)
@@ -178,13 +178,18 @@ class FairinoRobot:
 
     def __init__(
         self,
-        teleop_mode: bool
+        teleop_mode: bool,
+        left_com:str="COM7", #leader arm com
+        right_com:str="COM9" #leader arm com
     ):
         self.config = Fr3obotConfig()
         self.robot_type = "fairino_robot"
         #leader arm
         self.leader_arms : dict[str, FeetechMotorsBus] = {}
         if teleop_mode :
+            self.config.leader_arms["left"].serial_port=left_com
+            self.config.leader_arms["right"].serial_port=right_com
+            
             for key, cfg in self.config.leader_arms.items():
                 self.leader_arms[key] = FeetechMotorsBus(cfg)
         #follow arm 
@@ -295,7 +300,22 @@ class FairinoRobot:
         if self.head_motor :
             print("connect head motor")
             self.head_motor.connect()
-            self.head_motor.write("Torque_Enable", TorqueMode.DISABLED.value)
+            # Mode=0 for Position Control
+            self.head_motor.write("Mode", 0)
+            # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
+            self.head_motor.write("P_Coefficient", 8)
+            # Set I_Coefficient and D_Coefficient to default value 0 and 32
+            self.head_motor.write("I_Coefficient", 0)
+            self.head_motor.write("D_Coefficient", 32)
+            # Close the write lock so that Maximum_Acceleration gets written to EPROM address,
+            # which is mandatory for Maximum_Acceleration to take effect after rebooting.
+            self.head_motor.write("Lock", 0)
+            # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
+            # the motors. Note: this configuration is not in the official STS3215 Memory Table
+            self.head_motor.write("Maximum_Acceleration", 20)
+            self.head_motor.write("Acceleration", 20)
+
+            self.head_motor.write("Torque_Enable", TorqueMode.ENABLED.value)
             self.head_motor.read("Present_Position")
         # Connect the cameras
         for name in self.cameras:
@@ -454,6 +474,7 @@ class FairinoRobot:
             raise RobotDeviceNotConnectedError(
                 "ManipulatorRobot is not connected. You need to run `robot.connect()`."
             )
+        start_frame_time1 = time.perf_counter()
         from_idx = 0
         to_idx = 0
         action_sent = []
@@ -462,22 +483,34 @@ class FairinoRobot:
             to_idx += len(self.follower_arms[name].motors)
             goal_pos = action[from_idx:to_idx]
             from_idx = to_idx
+            
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.
             if self.config.max_relative_target is not None:
+                start_frame_time = time.perf_counter()
                 present_pos = self.follower_arms[name].getJointPos().astype(np.float32)
+                dt_s = time.perf_counter() - start_frame_time
+                #print("333fr3 elapsed time:", dt_s*1000,"ms")
                 present_pos = torch.from_numpy(present_pos)
                 goal_pos = ensure_safe_goal_position(goal_pos, present_pos, self.config.max_relative_target)
             # Save tensor to concat and return
             action_sent.append(goal_pos)
             # Send goal position to each follower
             goal_pos = goal_pos.numpy().astype(np.int32)
+            start_frame_time = time.perf_counter()
             self.follower_arms[name].setJointPos(goal_pos, cmd_T=DT)
+            dt_s = time.perf_counter() - start_frame_time
+            #print("444fr3 elapsed time:", dt_s*1000,"ms")
         head_pos = action[from_idx : from_idx+1]
         action_sent.append(head_pos)
         head_pos = self.head_motor_position2encoder(head_pos)
         head_pos = head_pos.numpy().astype(np.int32)
+        start_frame_time = time.perf_counter()
         self.head_motor.write("Goal_Position", head_pos)
+        dt_s = time.perf_counter() - start_frame_time
+        #print("555fr3 elapsed time:", dt_s*1000,"ms")
+        dt_s = time.perf_counter() - start_frame_time1
+        #print("fr3 total elapsed time:", dt_s*1000,"ms")
         return torch.cat(action_sent)
 
     def print_logs(self):
@@ -491,6 +524,7 @@ class FairinoRobot:
             )
 
         for name in self.follower_arms:
+            self.follower_arms[name].disable()
             self.follower_arms[name].disconnect()
 
         for name in self.leader_arms:

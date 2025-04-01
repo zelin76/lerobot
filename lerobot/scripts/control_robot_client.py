@@ -112,14 +112,14 @@ def client_record(
                 client_socket.sendall(json.dumps(data_to_send).encode('utf-8'))
                 #print("sent:",data_to_send)
                 # Receive acknowledgment from server
-                readable_sockets, _, _ = select.select([client_socket], [], [], 10)
+                readable_sockets, _, _ = select.select([client_socket], [], [], 1000)
                 ack = client_socket.recv(1024).decode('utf-8')
                 if ack != "ACK":
                     logging.warning(f"Unexpected server response: {ack}")
                 # Control FPS
                 elapsed_time = time.perf_counter() - start_frame_time
                 busy_wait(1.0/cfg.fps - elapsed_time)
-
+                print("client elapsed time:", elapsed_time*1000,"ms")
                 frame_count += 1
 
                 dt_s = time.perf_counter() - start_frame_time
@@ -135,12 +135,15 @@ def client_record(
             client_socket.sendall("END_EPISODE".encode('utf-8'))
             print("Waiting for server save data ready ....")
             # Wait for server to be ready for next episode
-            readable_sockets, _, _ = select.select([client_socket], [], [], 100)
-            ready = client_socket.recv(1024).decode('utf-8')
-            if ready != "READY":
-                logging.error(f"Server not ready for next episode: {ready}")
-                break
-            
+            while 1:
+                readable_sockets, _, _ = select.select([client_socket], [], [], 100)
+                ready = client_socket.recv(1024).decode('utf-8')
+                if ready.find('READY') != -1 :
+                    logging.error(f"Server ready for next episode: {ready}")
+                    break
+                else :
+                    print("Waiting for server save data ready ....")
+                
             # Reset event flags
             events["exit_early"] = False
             
@@ -172,9 +175,10 @@ def control_robot_client(cfg: ControlPipelineConfig):
     """Main client control function."""
     init_logging()
     logging.info(pformat(asdict(cfg)))
-    
+    left_com=cfg.control.left_com  
+    right_com=cfg.control.right_com
     # Initialize robot with only leader arms (no follower arms or cameras)
-    custom_robot = FairinoRobot(teleop_mode=True)
+    custom_robot = FairinoRobot(teleop_mode=True, left_com=left_com, right_com=right_com)
     
     # Run client record mode
     if isinstance(cfg.control, ClientControlConfig):

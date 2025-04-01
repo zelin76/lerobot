@@ -17,7 +17,7 @@ python lerobot/scripts/control_robot_server.py \
 python lerobot/scripts/control_robot_server.py --control.type=server_record --control.listen_port=9999 --control.fps=30 --control.repo_id=fr3/test3 --control.num_episodes=2 --control.single_task="grasp."
 ```
 """
-
+import cv2
 import logging
 import socket
 import time
@@ -47,6 +47,7 @@ from lerobot.common.robot_devices.utils import safe_disconnect, busy_wait
 from lerobot.common.utils.utils import init_logging, log_say
 from lerobot.configs import parser
 
+totolImage=np.zeros((240, 3*320,3),dtype=np.uint8)
 
 @ControlConfig.register_subclass("server_record")
 @dataclass
@@ -107,6 +108,7 @@ def server_record(
         client_cfg_single_task = init_config["single_task"]
         # Create dataset for recording
         #sanity_check_dataset_name(client_cfg_repo_id, cfg.policy)
+ 
         dataset = LeRobotDataset.create(
             client_cfg_repo_id,
             client_cfg_fps,
@@ -119,23 +121,25 @@ def server_record(
         
         # Main recording loop
         episode_count = 0
-        
+
         # Process episodes until we reach the target number or stop recording
         while episode_count < client_cfg_num_episodes :
             # Wait for episode start marker from client
             # 使用 select 函数监听所有连接的 client_socket
-            _, _, _ = select.select([client_socket], [], [], 1)
+            _, _, _ = select.select([client_socket], [], [], 5)
             start_signal = client_socket.recv(1024).decode('utf-8')
             if not start_signal:
                 logging.warning("Client disconnected")
                 break
-            if start_signal != "START_EPISODE":
+            if not start_signal.startswith("START_EPISODE"):
                 if start_signal == "CLOSE":
                     logging.info("Client requested to close connection")
                     break
                 logging.warning(f"Expected START_EPISODE, got: {start_signal}")
                 continue
-            
+
+            client_socket.sendall("ACK".encode('utf-8'))
+
             logging.info(f"Starting to record episode {episode_count+1}")
             
             # Recording loop for current episode
@@ -144,13 +148,13 @@ def server_record(
             
             # Clear episode buffer in case we have data from a previous failed recording
             dataset.clear_episode_buffer()
-            
+
             while True:
                 start_frame_time = time.perf_counter()
                 
                 # Receive data from client
                 try:
-                    _, _, _ = select.select([client_socket], [], [], 5)
+                    _, _, _ = select.select([client_socket], [], [],5)
                     data = client_socket.recv(4096).decode('utf-8')
                     if not data:
                         logging.warning("Client disconnected")
@@ -161,7 +165,7 @@ def server_record(
                     
                     # Acknowledge receipt to client
                     client_socket.sendall("ACK".encode('utf-8'))
-
+                    start_frame_time = time.perf_counter()
                     # Parse the received data
                     frame_data = json.loads(data)
                     
@@ -179,13 +183,27 @@ def server_record(
                             action.append(leader_pos[name])
                     action.append(leader_pos["head"])
                     action = torch.cat(action)
-                    
+                   
                     # Send action to robot
+                    start_frame_time = time.perf_counter()
                     robot.send_action(action)
+                    dt_s = time.perf_counter() - start_frame_time
+                    #print("222server elapsed time:", dt_s*1000,"ms")
                     #print("test:", action)
                     # Capture current observation including camera images and follower arm positions
                     observation = robot.capture_observation()
-            
+                    dt_s = time.perf_counter() - start_frame_time
+                    #print("333server elapsed time:", dt_s*1000,"ms")
+                    image_keys = [key for key in observation if "image" in key]
+                    x_offset= 0
+                    for key in image_keys:
+                        
+                        img = observation[key].numpy()                      
+                        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                        #putting all together
+                        witdh=int(img.shape[1]/2)
+                        totolImage[:,x_offset:x_offset+witdh]=img[:,0:witdh]
+                        x_offset+=witdh
                     # Prepare action dict
                     action_dict = {"action": action}
                     
@@ -196,6 +214,7 @@ def server_record(
                     frame_count += 1
                     # Log performance info
                     dt_s = time.perf_counter() - start_frame_time
+                    #print("server elapsed time:", dt_s*1000,"ms")
                     if frame_count % (client_cfg_fps * 2) == 0 :
                         log_control_info(robot, dt_s, fps=client_cfg_fps)
              
@@ -214,6 +233,8 @@ def server_record(
             
             # Signal to client that we're ready for the next episode
             client_socket.sendall("READY".encode('utf-8'))
+        #close all windows
+        cv2.destroyAllWindows()
             
         # Stop recording and clean up
         logging.info("Stopping recording")
@@ -255,5 +276,6 @@ def control_robot_server(cfg: ControlPipelineConfig):
 
 
 if __name__ == "__main__":
+   
     # Register our custom control config
     control_robot_server()

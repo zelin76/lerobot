@@ -117,10 +117,14 @@ class FairinoArm:
         gripper_values= values[-1]
         values = values[:-1]
         values = values.tolist()
-        self.arm.ResetAllError()
+        #self.arm.ResetAllError()
+        before_camread_t = time.perf_counter()
         gripper_values = self.gripper_pos2encoder(gripper_values)
+        
         self.gripper.write("Goal_Position", gripper_values)
+        #print("send goal :", time.perf_counter() - before_camread_t)
         ret =  self.arm.ServoJ(joint_pos=values, axisPos=[0,0,0,0,0,0], cmdT=cmd_T)
+        #print("send goal1 :", time.perf_counter() - before_camread_t)
         return ret
     
     def getJointPos(self) :

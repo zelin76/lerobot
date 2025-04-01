@@ -10,7 +10,46 @@ from lerobot.configs.default import EvalConfig
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.train import TrainPipelineConfig
 
+@dataclass
+class InferConfig:
+     # Either the repo ID of a model hosted on the Hub or a path to a directory containing weights
+    # saved using `Policy.save_pretrained`. If not provided, the policy is initialized from scratch
+    # (useful for debugging). This argument is mutually exclusive with `--config`.
+    policy: PreTrainedConfig | None = None
+    output_dir: Path | None = None
+    job_name: str | None = None
+    # TODO(rcadene, aliberts): By default, use device and use_amp values from policy checkpoint.
+    device: str | None = None  # cuda | cpu | mps
+    # `use_amp` determines whether to use Automatic Mixed Precision (AMP) for training and evaluation. With AMP,
+    # automatic gradient scaling is used.
+    use_amp: bool = False
+    seed: int | None = 1000
+    
+    def __init__(self, pretrained_path):
+        self.policy = PreTrainedConfig.from_pretrained(pretrained_path)
+        self.policy.pretrained_path = pretrained_path
+        train_cfg = TrainPipelineConfig.from_pretrained(pretrained_path)
+        self.device = train_cfg.device
+        self.use_amp = train_cfg.use_amp            
+        # Automatically switch to available device if necessary
+        if not is_torch_device_available(self.device):
+            auto_device = auto_select_torch_device()
+            logging.warning(f"Device '{self.device}' is not available. Switching to '{auto_device}'.")
+            self.device = auto_device
 
+        # Automatically deactivate AMP if necessary
+        if self.use_amp and not is_amp_available(self.device):
+            logging.warning(
+                f"Automatic Mixed Precision (amp) is not available on device '{self.device}'. Deactivating AMP."
+            )
+            self.use_amp = False
+        self.job_name = f"{self.policy.type}"
+        now = dt.datetime.now()
+        eval_dir = f"{now:%Y-%m-%d}/{now:%H-%M-%S}_{self.job_name}"
+        self.output_dir = Path("outputs/infer") / eval_dir 
+        self.seed: int = 1000
+
+                          
 @dataclass
 class InferPipelineConfig:
     # Either the repo ID of a model hosted on the Hub or a path to a directory containing weights

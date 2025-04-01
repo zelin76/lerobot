@@ -14,7 +14,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 from termcolor import colored
-from torch import Tensor, nn
+
 from tqdm import trange
 
 from lerobot.configs.types import FeatureType
@@ -26,7 +26,7 @@ from lerobot.common.utils.utils import (
     init_logging,
 )
 from lerobot.configs import parser
-from lerobot.configs.infer import InferPipelineConfig
+from lerobot.configs.infer import InferPipelineConfig, InferConfig
 
 from lerobot.common.robot_devices.control_utils import (
     init_keyboard_listener,
@@ -38,8 +38,18 @@ from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import safe_disconnect, busy_wait
 
 from lerobot.common.datasets.utils import dataset_to_policy_features, get_features_from_robot
+import cv2
 
-def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, fps: int, device, use_amp: bool) :
+normal=0
+stopWhenFinish=1
+pause=2
+stopExit=3
+stop_level: int =normal # 0= normal 1= stop when finish,  2= pause , 3 =stop and exit
+
+# Global variable for image display
+task_image: np.ndarray = np.zeros((240, 960, 3), dtype=np.uint8)
+
+def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , fps: int, device, use_amp: bool) :
     listener, events = init_keyboard_listener()
 
     # Connect robot and set robot to init pos 
@@ -48,10 +58,24 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, fps: int, device
     # TODO get the robot home pose
     # robot.toInitPos()
 
-    loop_count = 0
-    while  not events["exit_infer"] :
+    loop_count = 0 
+    while   (loop_time < 0 or loop_count< loop_time) and   not events["exit_infer"] :
+        if stop_level==3:
+            break
+        
         start_loop_t = time.perf_counter()
         observation = robot.capture_observation()
+        
+        image_keys = [key for key in observation if "image" in key]
+        x_offset= 0
+        for key in image_keys:
+                img = observation[key].numpy()                      
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                #putting all together
+                task_image[:,x_offset:x_offset+img.shape[1]//2] = img[:,0:img.shape[1]//2]
+                x_offset += img.shape[1]//2
+       
+                    
         pred_action = predict_action(observation, policy, device, use_amp)
 
         # Caution ！！！ make sure the pred action is in reasonable range before send_action
@@ -72,7 +96,10 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, fps: int, device
         
 
 @parser.wrap()
-def FairinoRobotInfer(cfg: InferPipelineConfig):
+def FairinoRobotInfer(policy_path: str, loop_time:int=-1, policy: PreTrainedPolicy=None):
+
+    cfg = InferConfig(policy_path)
+
     """Main server control function."""
     init_logging()
     logging.info(pformat(asdict(cfg)))
@@ -89,20 +116,21 @@ def FairinoRobotInfer(cfg: InferPipelineConfig):
     logging.info("Making Robot.")
     robot = FairinoRobot(teleop_mode=False)
     
-    logging.info("Making policy.")
-   
-    policy_cls = get_policy_class(cfg.policy.type)
-
-    policy = policy_cls.from_pretrained(pretrained_name_or_path=cfg.policy.pretrained_path, 
+    if policy is None:
+        logging.info("Making policy.")
+        policy_cls = get_policy_class(cfg.policy.type)
+        policy = policy_cls.from_pretrained(pretrained_name_or_path=cfg.policy.pretrained_path, 
                                         config=cfg.policy,
                                         local_files_only=True,
                                         map_location=cfg.device)
-
+        
     logging.info("Start inference ....")
-    infer_policy(robot=robot, policy=policy, fps=30, device=device, use_amp=cfg.use_amp)
+    infer_policy(robot=robot, policy=policy, loop_time=loop_time, fps=30, device=device, use_amp=cfg.use_amp)
     robot.disconnect()
     logging.info("End of infer")
+    
+
 
 if __name__ == "__main__":
     # Register our custom control config
-    FairinoRobotInfer()
+    FairinoRobotInfer("outputs/train/test3/checkpoints/last/pretrained_model")
