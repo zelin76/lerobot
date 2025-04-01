@@ -15,7 +15,7 @@
 # limitations under the License.
 import logging
 from pathlib import Path
-
+import os
 from termcolor import colored
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -47,20 +47,21 @@ def get_step_identifier(step: int, total_steps: int) -> str:
 def get_step_checkpoint_dir(output_dir: Path, total_steps: int, step: int) -> Path:
     """Returns the checkpoint sub-directory corresponding to the step number."""
     step_identifier = get_step_identifier(step, total_steps)
-    return output_dir / CHECKPOINTS_DIR / step_identifier
+    temp_path = os.path.join(output_dir, CHECKPOINTS_DIR)
+    return Path(os.path.join(temp_path, step_identifier))
 
 
 def save_training_step(step: int, save_dir: Path) -> None:
-    write_json({"step": step}, save_dir / TRAINING_STEP)
+    write_json({"step": step}, Path(os.path.join(save_dir, TRAINING_STEP)))
 
 
 def load_training_step(save_dir: Path) -> int:
-    training_step = load_json(save_dir / TRAINING_STEP)
+    training_step = load_json(Path(os.path.join(save_dir, TRAINING_STEP)))
     return training_step["step"]
 
 
 def update_last_checkpoint(checkpoint_dir: Path) -> Path:
-    last_checkpoint_dir = checkpoint_dir.parent / LAST_CHECKPOINT_LINK
+    last_checkpoint_dir = Path(os.path.join(checkpoint_dir.parent, LAST_CHECKPOINT_LINK))
     if last_checkpoint_dir.is_symlink():
         last_checkpoint_dir.unlink()
     relative_target = checkpoint_dir.relative_to(checkpoint_dir.parent)
@@ -96,7 +97,7 @@ def save_checkpoint(
         optimizer (Optimizer | None, optional): The optimizer to save the state from. Defaults to None.
         scheduler (LRScheduler | None, optional): The scheduler to save the state from. Defaults to None.
     """
-    pretrained_dir = checkpoint_dir / PRETRAINED_MODEL_DIR
+    pretrained_dir = Path(os.path.join(checkpoint_dir, PRETRAINED_MODEL_DIR))
     policy.save_pretrained(pretrained_dir)
     cfg.save_pretrained(pretrained_dir)
     save_training_state(checkpoint_dir, step, optimizer, scheduler)
@@ -119,7 +120,7 @@ def save_training_state(
         scheduler (LRScheduler | None, optional): The scheduler from which to save the state_dict.
             Defaults to None.
     """
-    save_dir = checkpoint_dir / TRAINING_STATE_DIR
+    save_dir = Path(os.path.join(checkpoint_dir, TRAINING_STATE_DIR))
     save_dir.mkdir(parents=True, exist_ok=True)
     save_training_step(train_step, save_dir)
     save_rng_state(save_dir)
@@ -148,7 +149,7 @@ def load_training_state(
         tuple[int, Optimizer, LRScheduler | None]: training step, optimizer and scheduler with their
             state_dict loaded.
     """
-    training_state_dir = checkpoint_dir / TRAINING_STATE_DIR
+    training_state_dir = Path(os.path.join(checkpoint_dir, TRAINING_STATE_DIR))
     if not training_state_dir.is_dir():
         raise NotADirectoryError(training_state_dir)
 

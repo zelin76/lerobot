@@ -1,5 +1,6 @@
 import multiprocessing.process
 from PyQt6.QtWidgets import (
+    QApplication,
     QWidget, QVBoxLayout, QLabel, QTextEdit,
     QListWidget, QMessageBox,QPushButton,
     QTreeWidget, QTreeWidgetItem, QHBoxLayout, QFileDialog
@@ -18,8 +19,8 @@ from lerobot.common.policies.act.configuration_act import ACTConfig
 from lerobot.common.utils.utils import init_logging
 
 # Set models directory
-models_dir = "outputs/train" #dont change 
-dataset_dir = "outputs/dataset" #dont change 
+models_dir = "outputs/train/" #dont change 
+dataset_dir = "outputs/dataset/" #dont change 
 
 # to select
 current_policy:PreTrainedPolicy=None
@@ -60,6 +61,15 @@ class ModelPanel(QWidget):
         self.model_list = QListWidget()
         layout.addWidget(self.model_list)
 
+        
+        # dataset name
+        dn_layout = QHBoxLayout()
+        dn_layout.addWidget(QLabel("Repo ID:"))
+        self.repo_id_input = QTextEdit()
+        self.repo_id_input.setPlaceholderText("Enter repo id") 
+        self.repo_id_input.setMaximumHeight(30)
+        dn_layout.addWidget(self.repo_id_input)
+        layout.addLayout(dn_layout)
 
         # Model name
         mn_layout = QHBoxLayout()
@@ -91,6 +101,15 @@ class ModelPanel(QWidget):
         sf_layout.addWidget(self.sf_input)
         layout.addLayout(sf_layout)
 
+        # save frequence
+        ts_layout = QHBoxLayout()
+        ts_layout.addWidget(QLabel("Train Steps:"))
+        self.ts_input = QTextEdit()
+        self.ts_input.setPlaceholderText("Enter save frequence (eg. 20000)") 
+        self.ts_input.setText("1000000")
+        self.ts_input.setMaximumHeight(30)
+        ts_layout.addWidget(self.ts_input)
+        layout.addLayout(ts_layout)
 
         self.add_button=QPushButton("Creat Model")
         layout.addWidget(self.add_button)
@@ -117,6 +136,7 @@ class ModelPanel(QWidget):
         
         self.model_details = QTextEdit()
         self.model_details.setReadOnly(True)
+        
         model_info.addWidget(self.model_details)
         main_layout.addWidget(right_panel,stretch=1)
 
@@ -175,7 +195,8 @@ class ModelPanel(QWidget):
             
         current_data_name = item.text(0)
         current_data_path = os.path.join(dataset_dir, current_data_name)
-         
+        self.repo_id_input.setText(current_data_name)
+        self.mn_input.setText(current_data_name)
         if os.path.exists(current_data_path):
             print("current path:", current_data_path)
         else:
@@ -186,6 +207,10 @@ class ModelPanel(QWidget):
         #        QTreeWidgetItem(item, [data_item])
     
     def create_model(self):
+        current_data_name = self.repo_id_input.toPlainText()
+        model_name = self.mn_input.toPlainText()
+        save_frequence = int(self.sf_input.toPlainText())
+        train_steps=int(self.ts_input.toPlainText())
         train_with_config(repo_id=current_data_name, output_dir=models_dir+model_name,
                           pretrained_path=None, train_steps=train_steps, save_freq=save_frequence)
         self.refresh_model_dir()
@@ -331,9 +356,23 @@ class ModelPanel(QWidget):
                 f"Failed to train model: {str(e)}"
             )
             return False
+def test_fun():
+    # resume 
+    train_with_config(repo_id='test10', output_dir=os.path.join(models_dir, 'test11'), \
+                      pretrained_path='outputs/train/test10/checkpoints/last/', train_steps=131411, save_freq=800)
+    # new policy
+    #train_with_config(repo_id='test10', output_dir=os.path.join(models_dir, 'test10'), pretrained_path=None, train_steps=131411, save_freq=800)     
 
+# if __name__ == "__main__":
+#     init_logging()
+#     #test_fun()   
+#     process=multiprocessing.Process(target=test_fun)
+#     process.start()
+#     process.join()
 
 if __name__ == "__main__":
     init_logging()
-    #train_with_config(repo_id='fr3/test_wzl', output_dir=models_dir+'fr3/test_wzl', pretrained_path='outputs/train/fr2/checkpoints/last/', train_steps=131411)
-    train_with_config(repo_id='fr3/test_wzl', output_dir=models_dir+'fr3/test_wzl', pretrained_path=None, train_steps=131411)         
+    app = QApplication([])
+    ui = ModelPanel()
+    ui.show()
+    app.exec()
