@@ -7,15 +7,16 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal
 import os
 import torch
-from lerobot.scripts.train import train
+from lerobot.scripts.train import train_with_config
 from lerobot.scripts.train_plus import load_pretrained_model 
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.configs.default import DatasetConfig
 import multiprocessing
-from lerobot.common.policies.act.modeling_act import ACTPolicy
 from lerobot.common.policies.act.configuration_act import ACTConfig
-from lerobot.configs.policies import PreTrainedConfig
+
+from lerobot.common.utils.utils import init_logging
+
 # Set models directory
 models_dir = "outputs/train" #dont change 
 dataset_dir = "outputs/dataset" #dont change 
@@ -177,11 +178,8 @@ class ModelPanel(QWidget):
         #        QTreeWidgetItem(item, [data_item])
     
     def create_model(self):
-        cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_name))
-        cfg.policy=ACTConfig()
-        cfg.output_dir=current_model_path+self.mn_input.toPlainText()
-        cfg.save_freq=int(self.sf_input.toPlainText())
-        train(cfg)
+        train_with_config(repo_id=current_data_name, output_dir=current_model_path+self.mn_input.toPlainText(),
+                          pretrained_path=None, train_steps=100000, save_freq=int(self.sf_input.toPlainText()))
         self.refresh_model_dir()
 
     def handle_model_create(self):
@@ -319,24 +317,8 @@ class ModelPanel(QWidget):
             )
             return False
 
-    def test_fun():
-        current_data_path="test10"
-        cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_path))
-        cfg.policy=ACTConfig() 
-        cfg.output_dir="outputs/train/test10"
-        train(cfg)
 
-def main():
-    current_data_path="test10"
-    cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_path))
-    cfg.policy=ACTConfig() 
-    cfg.output_dir="outputs/train/test10"
-    #train(cfg)
-    process=multiprocessing.process(target=ModelPanel.test_fun)
-    process.start()
-
-    
-    
-    print("jaja")
 if __name__ == "__main__":
-    main()        
+    init_logging()
+    #train_with_config(repo_id='fr3/test_wzl', output_dir=models_dir+'fr3/test_wzl', pretrained_path='outputs/train/fr2/checkpoints/last/', train_steps=131411)
+    train_with_config(repo_id='fr3/test_wzl', output_dir=models_dir+'fr3/test_wzl', pretrained_path=None, train_steps=131411)         

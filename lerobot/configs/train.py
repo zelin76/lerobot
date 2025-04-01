@@ -30,6 +30,7 @@ class TrainPipelineConfig(HubMixin):
     # with the same value for `dir` its contents will be overwritten unless you set `resume` to true.
     output_dir: Path | None = None
     job_name: str | None = None
+    pretrained_path: str | None = None
     # Set `resume` to true to resume a previous run. In order for this to work, you will need to make sure
     # `dir` is the directory of an existing run with at least one checkpoint in it.
     # Note that when resuming a run, the default behavior is to use the configuration from the checkpoint,
@@ -82,7 +83,10 @@ class TrainPipelineConfig(HubMixin):
             self.policy.pretrained_path = policy_path
         elif self.resume:
             # The entire train config is already loaded, we just need to get the checkpoint dir
-            config_path = parser.parse_arg("config_path")
+            if self.pretrained_path :
+                config_path = self.pretrained_path
+            else:
+                config_path = parser.parse_arg("config_path")
             if not config_path:
                 raise ValueError("A config_path is expected when resuming a run.")
             if not Path(config_path).resolve().exists():
