@@ -55,17 +55,23 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , 
     # Connect robot and set robot to init pos 
     if not robot.is_connected:
         robot.connect()
-    # TODO get the robot home pose
-    # robot.toInitPos()
+    # robot to initial pose
+    joint_pos = robot.capture_observation()["observation.state"].numpy()
+    while not np.allclose(joint_pos, robot.config.initial_pos, atol=2.0):
+        time.sleep(0.01)
+        joint_pos = robot.capture_observation()["observation.state"].numpy()
+        clear_camera_buffer_count = clear_camera_buffer_count - 1
 
     loop_count = 0 
+    maybe_loop_done_count = 0
+
     while   (loop_time < 0 or loop_count< loop_time) and   not events["exit_infer"] :
         if stop_level==3:
             break
         
         start_loop_t = time.perf_counter()
         observation = robot.capture_observation()
-        
+        joint_pos = observation["observation.state"].numpy()
         image_keys = [key for key in observation if "image" in key]
         x_offset= 0
         for key in image_keys:
@@ -85,6 +91,14 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , 
         action = robot.send_action(pred_action)
         print(pred_action)
         
+        if (np.allclose(pred_action.numpy(), robot.config.initial_pos, atol=5) and \
+            np.allclose(joint_pos, robot.config.initial_pos, atol=5)) :
+            maybe_loop_done_count += 1
+        else :
+            maybe_loop_done_count = 0
+        if maybe_loop_done_count > fps * 5 :
+            print("maybe inference task done")
+            break
         if fps is not None:
             dt_s = time.perf_counter() - start_loop_t
             busy_wait(1 / fps - dt_s)

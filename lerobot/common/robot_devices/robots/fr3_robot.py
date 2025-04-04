@@ -41,6 +41,9 @@ from lerobot.common.robot_devices.robots.fr3_arm import FairinoArm
 
 @dataclass
 class Fr3obotConfig :
+    # initial pos
+    initial_pos = np.array[-53.9997, -116.9998, 96.9997,  -106.9997, 7.0001, -120.9999, 0, 
+                           -39.9998, -63.9998,  -77.9992, -86.9995,  1.9999, 126.5697,  0,  0]
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
     # the number of motors in your follower arms.
