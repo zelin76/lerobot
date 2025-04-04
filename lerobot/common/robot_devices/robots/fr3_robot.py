@@ -52,8 +52,8 @@ class Fr3obotConfig :
 
     leader_arm_deg_offset : dict[str, np.array] = field(
         default_factory=lambda: { 
-            "left" : np.array([-45, -90, 0, -90, 0, 0]),
-            "right": np.array([-45, -90, 0, -90, 0, 0])
+            "left" : np.array([-45, -90, 0, -90, 0, 45]),
+            "right": np.array([-45, -90, 0, -90, 0, -45])
         }
     )
     leader_arm_dir : dict[str, np.array] = field(
@@ -202,7 +202,6 @@ class FairinoRobot:
             self.head_motor = FeetechMotorsBus(self.config.head_config)
             #cameras
             self.cameras = make_cameras_from_configs(self.config.cameras)
-
         self.is_connected = False
         self.logs = {}
 
@@ -443,7 +442,7 @@ class FairinoRobot:
         state.append(follower_pos["head"])
         state = torch.cat(state)
         state = state.type(torch.float32)
-
+        print("state",state)
         # Capture images from cameras
         images = {}
         for name in self.cameras:
@@ -452,7 +451,7 @@ class FairinoRobot:
             images[name] = torch.from_numpy(images[name])
             self.logs[f"read_camera_{name}_dt_s"] = self.cameras[name].logs["delta_timestamp_s"]
             self.logs[f"async_read_camera_{name}_dt_s"] = time.perf_counter() - before_camread_t
-
+       
         # Populate output dictionnaries and format to pytorch
         obs_dict = {}
         obs_dict["observation.state"] = state

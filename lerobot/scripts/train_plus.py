@@ -42,7 +42,7 @@ import os
 from torch.optim import Adam,Optimizer
 from torch.optim.lr_scheduler import StepLR
 
-def load_pretrained_model(model_path: str, dataset_path: str):
+def load_pretrained_model(model_path: str, current_data_name:str):
     """Load pretrained model from specified path.
     
     Args:
@@ -59,7 +59,7 @@ def load_pretrained_model(model_path: str, dataset_path: str):
     # Create config with actual dataset metadata
     policyPath = model_path+ "/pretrained_model"
     cfg = TrainPipelineConfig(
-        dataset=DatasetConfig(repo_id=dataset_path),
+        dataset=DatasetConfig(repo_id=current_data_name),
         policy=PreTrainedConfig.from_pretrained(policyPath)
         #device=get_safe_torch_device()
     )
