@@ -40,18 +40,24 @@ from lerobot.common.robot_devices.utils import safe_disconnect, busy_wait
 from lerobot.common.datasets.utils import dataset_to_policy_features, get_features_from_robot
 import cv2
 
+# Global variable for image display
+task_image=np.zeros((240, 960, 3), dtype=np.uint8)
+
 normal=0
 stopWhenFinish=1
-pause=2
+pause=2 # can continue when get back
 stopExit=3
+nextToStop=-1
 stop_level: int =normal # 0= normal 1= stop when finish,  2= pause , 3 =stop and exit
 
-# Global variable for image display
-task_image: np.ndarray = np.zeros((240, 960, 3), dtype=np.uint8)
+def setStopValue(v:int):
+    global stop_level
+    stop_level=v
 
-def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , fps: int, device, use_amp: bool) :
+def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy,  fps: int, device, use_amp: bool) :
+    global task_image, stop_level
     listener, events = init_keyboard_listener()
-
+    
     # Connect robot and set robot to init pos 
     if not robot.is_connected:
         robot.connect()
@@ -59,9 +65,12 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , 
     # robot.toInitPos()
 
     loop_count = 0 
-    while   (loop_time < 0 or loop_count< loop_time) and   not events["exit_infer"] :
+    while stop_level<3 and  not events["exit_infer"] :
+
+        print("hahah",stop_level)
         if stop_level==3:
             break
+        
         
         start_loop_t = time.perf_counter()
         observation = robot.capture_observation()
@@ -69,11 +78,12 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , 
         image_keys = [key for key in observation if "image" in key]
         x_offset= 0
         for key in image_keys:
-                img = observation[key].numpy()                      
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                #putting all together
-                task_image[:,x_offset:x_offset+img.shape[1]//2] = img[:,0:img.shape[1]//2]
-                x_offset += img.shape[1]//2
+            img = observation[key].numpy()                      
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            #putting all together
+            width=int(img.shape[1]/2)
+            task_image[:,x_offset:x_offset+width] = img[:,0:width]
+            x_offset +=width
        
                     
         pred_action = predict_action(observation, policy, device, use_amp)
@@ -81,9 +91,11 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , 
         # Caution ！！！ make sure the pred action is in reasonable range before send_action
         # Caution ！！！ make sure the pred action is in reasonable range before send_action
         # Caution ！！！ make sure the pred action is in reasonable range before send_action
-        
-        action = robot.send_action(pred_action)
-        print(pred_action)
+        if  stop_level<2:
+            #action = robot.send_action(pred_action)
+            print(pred_action)
+        else:
+            break
         
         if fps is not None:
             dt_s = time.perf_counter() - start_loop_t
@@ -95,11 +107,9 @@ def infer_policy(robot: FairinoRobot, policy: PreTrainedPolicy, loop_time:int , 
     listener.stop()
         
 
-@parser.wrap()
 def FairinoRobotInfer(policy_path: str, loop_time:int=-1, policy: PreTrainedPolicy=None):
-
+    global stop_level
     cfg = InferConfig(policy_path)
-
     """Main server control function."""
     init_logging()
     logging.info(pformat(asdict(cfg)))
@@ -125,7 +135,16 @@ def FairinoRobotInfer(policy_path: str, loop_time:int=-1, policy: PreTrainedPoli
                                         map_location=cfg.device)
         
     logging.info("Start inference ....")
-    infer_policy(robot=robot, policy=policy, loop_time=loop_time, fps=30, device=device, use_amp=cfg.use_amp)
+    for ep in range(loop_time):
+        if stop_level==-1:
+            break 
+        
+        if stop_level==1:
+            stop_level=-1
+        if stop_level>2:
+            break
+        infer_policy(robot=robot, policy=policy, fps=30, device=device, use_amp=cfg.use_amp)    
+    stop_level=0
     robot.disconnect()
     logging.info("End of infer")
     

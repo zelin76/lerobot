@@ -36,6 +36,11 @@ from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.robot_devices.utils import safe_disconnect
 from lerobot.common.utils.utils import init_logging
 from lerobot.configs import parser
+from lerobot.scripts.baisic import *
+
+#server levels for ui
+
+client_level:int = NotStarted
 
 
 @ControlConfig.register_subclass("client_record")
@@ -51,6 +56,7 @@ def client_record(
     robot: FairinoRobot,
     cfg: ClientControlConfig,
 ):
+    global client_level
     """Client record mode that sends leader arm data to the server."""
     if not robot.is_connected:
         robot.connect()
@@ -59,11 +65,14 @@ def client_record(
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     logging.info(f"Connecting to server at {cfg.listen_ip}:{cfg.listen_port}")
     
+    client_level=WaitCon
+    
     try:
         listener, events = init_keyboard_listener()
         client_socket.connect((cfg.listen_ip, cfg.listen_port))
         client_socket.setblocking(False)
         logging.info("Connected to server successfully")
+        client_level=ClientConnected
         
         # Initialize keyboard listener for control flow
         
@@ -155,6 +164,7 @@ def client_record(
         
         # Close connection properly
         client_socket.sendall("CLOSE".encode('utf-8'))
+        client_level=ConnectionClosed
         
         if listener:
             listener.stop()

@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal
 import os
+import sys
 import torch
 from lerobot.scripts.train import train_with_config
 from lerobot.scripts.train_plus import load_pretrained_model 
@@ -18,13 +19,10 @@ from lerobot.common.policies.act.configuration_act import ACTConfig
 
 from lerobot.common.utils.utils import init_logging
 
-# Set models directory
-models_dir = "outputs/train/" #dont change 
-dataset_dir = "outputs/dataset/" #dont change 
 
 # to select
 current_policy:PreTrainedPolicy=None
-current_data_name:str=None
+
 current_model_path:str=None
 
 #for multiprocessing para
@@ -34,7 +32,8 @@ train_steps:int =100000
 
 class ModelPanel(QWidget):
     model_loaded = pyqtSignal(str)  # Signal emitted when model is loaded
-   
+    current_data_name:str=None
+    
     def __init__(self):
         super().__init__()
         
@@ -106,7 +105,7 @@ class ModelPanel(QWidget):
         ts_layout.addWidget(QLabel("Train Steps:"))
         self.ts_input = QTextEdit()
         self.ts_input.setPlaceholderText("Enter save frequence (eg. 20000)") 
-        self.ts_input.setText("1000000")
+        self.ts_input.setText("100000")
         self.ts_input.setMaximumHeight(30)
         ts_layout.addWidget(self.ts_input)
         layout.addLayout(ts_layout)
@@ -116,11 +115,6 @@ class ModelPanel(QWidget):
         # Create load button
         self.load_button = QPushButton("Load Model")
         layout.addWidget(self.load_button)
-    
-        # Buttons
-        self.save_button = QPushButton("Save Model")
-        self.save_button.setEnabled(False)
-        layout.addWidget(self.save_button)
         
         self.train_button = QPushButton("Train Model")
         self.train_button.setEnabled(False)
@@ -143,11 +137,15 @@ class ModelPanel(QWidget):
 
         self.refresh_datasets_dir()
         self.refresh_model_dir()
+        
+        self.add_button.setEnabled(False)
+        self.load_button.setEnabled(False)
+        self.train_button.setEnabled(False)
       
     def setup_connections(self):
         self.dataset_tree.itemDoubleClicked.connect(self.on_dataset_double_click)
+        
         self.add_button.clicked.connect(self.handle_model_create)
-        self.save_button.clicked.connect(self.save_model)
         self.train_button.clicked.connect(self.train_model)
         self.mn_input.textChanged.connect(self.update_info)
         
@@ -155,6 +153,7 @@ class ModelPanel(QWidget):
         self.load_button.clicked.connect( self.handle_model_load)
         self.train_button.clicked.connect( self.handle_model_train )
     def update_info(self):
+        global model_name, save_frequence
         model_name=self.mn_input.toPlainText()
         save_frequence=int(self.sf_input.toPlainText())
         
@@ -193,12 +192,15 @@ class ModelPanel(QWidget):
         if item.text(0) == "No datasets found":
             return
             
-        current_data_name = item.text(0)
-        current_data_path = os.path.join(dataset_dir, current_data_name)
-        self.repo_id_input.setText(current_data_name)
-        self.mn_input.setText(current_data_name)
+        self.current_data_name = item.text(0)
+        current_data_path = os.path.join(dataset_dir, self.current_data_name)
+        self.repo_id_input.setText(self.current_data_name)
+        self.mn_input.setText(self.current_data_name)
         if os.path.exists(current_data_path):
             print("current path:", current_data_path)
+            self.add_button.setEnabled(True)
+            self.load_button.setEnabled(True)
+            
         else:
             print("wrong path")
         
@@ -207,11 +209,11 @@ class ModelPanel(QWidget):
         #        QTreeWidgetItem(item, [data_item])
     
     def create_model(self):
-        current_data_name = self.repo_id_input.toPlainText()
+        self.current_data_name = self.repo_id_input.toPlainText()
         model_name = self.mn_input.toPlainText()
         save_frequence = int(self.sf_input.toPlainText())
         train_steps=int(self.ts_input.toPlainText())
-        train_with_config(repo_id=current_data_name, output_dir=models_dir+model_name,
+        train_with_config(repo_id=self.current_data_name, output_dir=models_dir+model_name,
                           pretrained_path=None, train_steps=train_steps, save_freq=save_frequence)
         self.refresh_model_dir()
 
@@ -230,7 +232,10 @@ class ModelPanel(QWidget):
     
     def handle_model_load(self):
         """Handle model loading from model selector"""
-        model_path = self.get_selected_model_path()
+        #current_data_name=self.dataset_tree.currentItem()
+        selected = self.model_list.currentItem()
+        model_path = models_dir+selected.text()+"/checkpoints" #self.get_selected_model_path()
+        print(self.current_data_name)
         if model_path:
             self.load_model(model_path)
             print("current model path : ", model_path)
@@ -238,24 +243,10 @@ class ModelPanel(QWidget):
     
     def handle_model_train(self):
         """Handle model training"""
-        self.model_panel.train_model()
+        self.train_model()
     
-    def on_dataset_double_click_model(self, item, column):
-        """Handle double click on dataset item"""
-        if item.text(0) == "No datasets found":
-            return
-            
-        model_name = item.text(0)
-        current_model_path = os.path.join(models_dir, model_name)
-         
-        if os.path.exists(current_model_path):
-            print("current path:", current_model_path)
-        else:
-            print("wrong path")
-        
-        #    item.takeChildren()  # Clear any existing subitems
-        #    for data_item in os.listdir(self.current_data_path):
-        #        QTreeWidgetItem(item, [data_item])
+
+    
     def refresh_model_dir(self):
         """Refresh model list"""
         self.model_list.clear()
@@ -268,24 +259,18 @@ class ModelPanel(QWidget):
             if os.path.isdir(model_path):
                 self.model_list.addItem(model_name)
                 
-    def get_selected_model_path(self):
-        """Get selected model path"""
-        selected = self.model_list.currentItem()
-        if selected:
-            model_name = selected.text()
-            return os.path.join(models_dir, model_name,"checkpoints")
-        return None
-
-
-
     def load_model(self, model_path):
+        global current_policy,current_model_path
+        
         """Load and display model details"""
         try:
-            
-            aux=os.readlink(model_path+"/last")
-            current_model_path=os.path.join( model_path,  aux)
-            current_data_path= os.path.join(dataset_dir,current_data_name)
-            step,current_policy,optimizer, lr_scheduler=load_pretrained_model(model_path=current_model_path, dataset_path=current_data_path)
+            if sys.platform =="win32":
+                current_model_path=model_path+"/last"  
+            else:     
+                aux=os.readlink(model_path+"/last")
+                current_model_path=os.path.join( model_path,  aux)
+            #current_data_path= os.path.join(dataset_dir,current_data_name)
+            step,current_policy,optimizer, lr_scheduler=load_pretrained_model(model_path=current_model_path,current_data_name=self.current_data_name)
             
             
             
@@ -297,7 +282,6 @@ class ModelPanel(QWidget):
             self.model_details.setText(model_info)
             
             # Enable buttons
-            self.save_button.setEnabled(True)
             self.train_button.setEnabled(True)
             
         except Exception as e:
@@ -306,36 +290,10 @@ class ModelPanel(QWidget):
                 f"Failed to load model: {str(e)}"
             )
     
-    def save_model(self, save_path=None):
-        """Save model to new location"""
-        if not current_policy:
-            return
-            
-        try:
-            if not save_path:
-                options = QFileDialog.Options()
-                save_path, _ = QFileDialog.getSaveFileName(
-                    self, "Save Model", "", 
-                    "Model Files (*.pt *.pth *.ckpt);;All Files (*)",
-                    options=options
-                )
-                
-            if save_path:
-                torch.save(current_policy, save_path)
-                QMessageBox.information(
-                    self, "Success", 
-                    f"Model saved to {save_path}"
-                )
-                return True
-                
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Error",
-                f"Failed to save model: {str(e)}"
-            )
-        return False
+
     
     def train_model(self):
+        global current_policy,current_model_path
         """Train the current model"""
         if not current_policy:
             return
@@ -348,6 +306,12 @@ class ModelPanel(QWidget):
                 self, "Training Started",
                 "Model training has begun..."
             )
+            output_dir=os.path.join(models_dir, self.model_list.currentItem().text())
+            train_with_config(repo_id=self.current_data_name,\
+                output_dir=output_dir, \
+                pretrained_path=os.path.join(output_dir,'checkpoints/last/'), \
+                    train_steps=int(self.ts_input.toPlainText()),\
+                        save_freq=int(self.sf_input.toPlainText()))
             return True
             
         except Exception as e:
