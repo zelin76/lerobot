@@ -12,46 +12,16 @@ from lerobot.common.robot_devices.control_configs import (
     ControlConfig,
     ControlPipelineConfig
     )
-from lerobot.scripts.control_robot_server import control_robot_server,ServerControlConfig, shared_dict,queue
+from lerobot.scripts.control_robot_server import control_robot_server,ServerControlConfig, totolImage,server_level
 from lerobot.scripts.control_robot_client import control_robot_client,ClientControlConfig, client_level
-import numpy as np
+
 from lerobot.scripts.baisic import *
 import multiprocessing
-from multiprocessing import Queue,shared_memory
 # Set models directory
-from lerobot.common.utils.utils import init_logging
- 
 
-totoImage=np.zeros((240, 960, 3), dtype=np.uint8)
-def parent_consumer(queue):
-    """父进程：从共享内存读取图像并清理"""
-    # 从Queue获取共享内存信息
-    data = queue.get()
-    if data is not None:
-        
-        shm_name, shape, dtype = data["name"], data["shape"], data["dtype"]
-    
-        # 连接到共享内存并读取数据
-        existing_shm = shared_memory.SharedMemory(name=shm_name)
-        image = np.ndarray(shape, dtype=dtype, buffer=existing_shm.buf).copy()  # 复制数据避免后续unlink影响
-    
-        # 销毁共享内存
-        #existing_shm.close()
-        #existing_shm.unlink()
-        #print("[父进程] 图像已显示，共享内存已销毁")
-        return existing_shm,image
-    else :
-        return None , None
+dataset_dir = "outputs/dataset"
 
-def consumer(shared_dict):
-    # 从共享字典中读取数据并重建图像
-    img_bytes = shared_dict.get("img_data")
-    if img_bytes:
-        img_array = np.frombuffer(img_bytes, dtype=np.uint8)
-        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # 解码为图像
-        return img
-    else:
-        return None
+
 
 
 class DataPanel(QWidget):
@@ -79,7 +49,7 @@ class DataPanel(QWidget):
         self.setLayout(main0_layout)
         
         #display images
-        self.image_layout=ndarray_to_qimage(totoImage)
+        self.image_layout=ndarray_to_qimage(totolImage)
         self.qpixmap=QPixmap.fromImage(self.image_layout)
         self.image_label=QLabel()
         self.image_label.setPixmap(self.qpixmap)
@@ -236,28 +206,24 @@ class DataPanel(QWidget):
             print("wrong path")
 
     def _update_camera_views(self):
-        global queue
-        #cv2.imwrite("/home/liu/test.png",totolImage)
-
-        
+        global totolImage,server_level
+        if os.path.exists("aux.jpg"):
+            cv2.imread("aux.jpg",totolImage)
+            self.qpixmap=QPixmap.fromImage(self.image_layout)
+            self.image_label.setPixmap(self.qpixmap)
+            self.image_layout=ndarray_to_qimage(totolImage)
         
         if self.server_radio.isChecked() :
-            if shared_dict['server_level'].value==0 or shared_dict['server_level'].value==3:
+            if server_level.value==0 or server_level.value==3:
                 self.add_btn.setEnabled(True)
             else : 
                 self.add_btn.setEnabled(False)
-                existing_shm, image=parent_consumer(queue)
-                #image =consumer(shared_dict=shared_dict)
-                if image is not None:
-                    self.image_layout=ndarray_to_qimage(image)
-                    self.qpixmap=QPixmap.fromImage(self.image_layout)
-                    self.image_label.setPixmap(self.qpixmap)
         
         if self.client_radio.isChecked():
             if client_level==0 or client_level==3:
                 self.add_btn.setEnabled(True)    
-            #else :
-                #self.add_btn.setEnabled(False)
+            else :
+                self.add_btn.setEnabled(False)
         
     def handle_control_robot(self):
         if self.server_radio.isChecked():
@@ -305,11 +271,10 @@ def main():
                                         )
         cfg=ControlPipelineConfig(control=control)
         control_robot_client(cfg)
-       
+        control_robot_client(cfg)
 if __name__ == "__main__":
     #main()
-    init_logging()
-    app = QApplication([])
-    ui = DataPanel()
+    app=QApplication([])
+    ui=DataPanel()
     ui.show()
-    app.exec()    
+    app.exec() 
