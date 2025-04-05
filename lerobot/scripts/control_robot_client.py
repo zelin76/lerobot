@@ -155,8 +155,10 @@ def client_record(
                     print("Waitting for env recover ...")
                     print("Press > to continue")
                     time.sleep(1)
+                # Reset event flags
+                events["exit_early"] = False
             episode_count += 1
-        
+
         # Close connection properly
         client_socket.sendall("CLOSE".encode('utf-8'))
         

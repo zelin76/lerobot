@@ -97,7 +97,9 @@ def server_record(
         clear_camera_buffer_count = 100
         joint_pos = robot.capture_observation()["observation.state"].numpy()
         while clear_camera_buffer_count > 0 or not np.allclose(joint_pos, robot.config.initial_pos, atol=2.0):
-            time.sleep(0.01)
+            time.sleep(0.033)
+            action = torch.from_numpy(robot.config.initial_pos)
+            robot.send_action(action)
             joint_pos = robot.capture_observation()["observation.state"].numpy()
             clear_camera_buffer_count = clear_camera_buffer_count - 1
             
@@ -230,7 +232,6 @@ def server_record(
                 start_frame_time = time.perf_counter()
                  # Create action tensor from robot initial pos
                 action = torch.from_numpy(robot.config.initial_pos)
-                action = torch.cat(action)
                 # Send action to robot
                 action_sent = robot.send_action(action)
                 # Capture current observation including camera images and follower arm positions
