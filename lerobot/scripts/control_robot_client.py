@@ -143,15 +143,19 @@ def client_record(
                     break
                 else :
                     print("Waiting for server save data ready ....")
-                
+               
             # Reset event flags
             events["exit_early"] = False
-            
-            episode_count += 1
             
             # If user requested to stop recording
             if events["stop_recording"]:
                 break
+            else :
+                while not events["exit_early"]:
+                    print("Waitting for env recover ...")
+                    print("Press > to continue")
+                    time.sleep(1)
+            episode_count += 1
         
         # Close connection properly
         client_socket.sendall("CLOSE".encode('utf-8'))
