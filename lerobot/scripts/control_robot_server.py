@@ -109,10 +109,14 @@ def server_record(
         init_config = json.loads(init_config_data)
         print("recv client init config:",init_config)
         clear_camera_buffer_count = 100
-        while clear_camera_buffer_count :
-            robot.capture_observation()
+        joint_pos = robot.capture_observation()["observation.state"].numpy()
+        while clear_camera_buffer_count > 0 or not np.allclose(joint_pos, robot.config.initial_pos, atol=2.0):
+            time.sleep(0.033)
+            action = torch.from_numpy(robot.config.initial_pos)
+            robot.send_action(action)
+            joint_pos = robot.capture_observation()["observation.state"].numpy()
             clear_camera_buffer_count = clear_camera_buffer_count - 1
-            time.sleep(0.01)
+            
         # Acknowledge receipt
         client_socket.sendall("ACK".encode('utf-8'))
         ### parse client config 
@@ -191,10 +195,11 @@ def server_record(
                     
                     # Acknowledge receipt to client
                     client_socket.sendall("ACK".encode('utf-8'))
-                    start_frame_time = time.perf_counter()
                     # Parse the received data
                     frame_data = json.loads(data)
-                    
+                    if "leader_pos" not in frame_data :
+                        # Skip error frame data
+                        continue
                     # Extract leader positions from received data and convert to tensors
                     leader_pos = {}
                     for arm_name, pos_list in frame_data["leader_pos"].items():
@@ -211,15 +216,11 @@ def server_record(
                     action = torch.cat(action)
                    
                     # Send action to robot
-                    start_frame_time = time.perf_counter()
                     robot.send_action(action)
-                    dt_s = time.perf_counter() - start_frame_time
-                    #print("222server elapsed time:", dt_s*1000,"ms")
-                    #print("test:", action)
+                    
                     # Capture current observation including camera images and follower arm positions
                     observation = robot.capture_observation()
-                    dt_s = time.perf_counter() - start_frame_time
-                    #print("333server elapsed time:", dt_s*1000,"ms")
+                    
                     image_keys = [key for key in observation if "image" in key]
                     x_offset= 0
                     for key in image_keys:
@@ -253,6 +254,40 @@ def server_record(
                     logging.error(f"Socket error: {e}")
                     break
             
+            # Move robot to initial pos and record to dataset
+            print("go to initial pos....")
+            while True :
+                start_frame_time = time.perf_counter()
+                 # Create action tensor from robot initial pos
+                action = torch.from_numpy(robot.config.initial_pos)
+                # Send action to robot
+                action_sent = robot.send_action(action)
+                # Capture current observation including camera images and follower arm positions
+                observation = robot.capture_observation()
+                joint_pos = observation["observation.state"].numpy()
+                if np.allclose(joint_pos, robot.config.initial_pos, atol=2.0):
+                    break
+                image_keys = [key for key in observation if "image" in key]
+                x_offset= 0
+                for key in image_keys:
+                    img = observation[key].numpy()                      
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                    #putting all together
+                    witdh=int(img.shape[1]/2)
+                    totolImage[:,x_offset:x_offset+witdh]=img[:,0:witdh]
+                    x_offset+=witdh
+                # Prepare action dict
+                action_dict = {"action": action_sent}
+                
+                # Add frame to dataset
+                frame = {**observation, **action_dict}
+                dataset.add_frame(frame)
+                
+                frame_count += 1
+                # Log performance info
+                dt_s = time.perf_counter() - start_frame_time
+                busy_wait(1.0/client_cfg_fps - dt_s)
+
             # Save the episode
             if frame_count > 0:
                 dataset.save_episode(client_cfg_single_task)
