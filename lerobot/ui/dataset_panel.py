@@ -12,15 +12,37 @@ from lerobot.common.robot_devices.control_configs import (
     ControlConfig,
     ControlPipelineConfig
     )
-from lerobot.scripts.control_robot_server import control_robot_server,ServerControlConfig, shared_dict
+from lerobot.scripts.control_robot_server import control_robot_server,ServerControlConfig, shared_dict,queue
 from lerobot.scripts.control_robot_client import control_robot_client,ClientControlConfig, client_level
 import numpy as np
 from lerobot.scripts.baisic import *
 import multiprocessing
+from multiprocessing import Queue,shared_memory
 # Set models directory
 from lerobot.common.utils.utils import init_logging
  
+
 totoImage=np.zeros((240, 960, 3), dtype=np.uint8)
+def parent_consumer(queue):
+    """父进程：从共享内存读取图像并清理"""
+    # 从Queue获取共享内存信息
+    data = queue.get()
+    if data is not None:
+        
+        shm_name, shape, dtype = data["name"], data["shape"], data["dtype"]
+    
+        # 连接到共享内存并读取数据
+        existing_shm = shared_memory.SharedMemory(name=shm_name)
+        image = np.ndarray(shape, dtype=dtype, buffer=existing_shm.buf).copy()  # 复制数据避免后续unlink影响
+    
+        # 销毁共享内存
+        #existing_shm.close()
+        #existing_shm.unlink()
+        #print("[父进程] 图像已显示，共享内存已销毁")
+        return existing_shm,image
+    else :
+        return None , None
+
 def consumer(shared_dict):
     # 从共享字典中读取数据并重建图像
     img_bytes = shared_dict.get("img_data")
@@ -214,12 +236,9 @@ class DataPanel(QWidget):
             print("wrong path")
 
     def _update_camera_views(self):
+        global queue
         #cv2.imwrite("/home/liu/test.png",totolImage)
-        image =consumer(shared_dict=shared_dict)
-        if image is not None:
-            self.image_layout=ndarray_to_qimage(image)
-        self.qpixmap=QPixmap.fromImage(self.image_layout)
-        self.image_label.setPixmap(self.qpixmap)
+
         
         
         if self.server_radio.isChecked() :
@@ -227,6 +246,12 @@ class DataPanel(QWidget):
                 self.add_btn.setEnabled(True)
             else : 
                 self.add_btn.setEnabled(False)
+                existing_shm, image=parent_consumer(queue)
+                #image =consumer(shared_dict=shared_dict)
+                if image is not None:
+                    self.image_layout=ndarray_to_qimage(image)
+                    self.qpixmap=QPixmap.fromImage(self.image_layout)
+                    self.image_label.setPixmap(self.qpixmap)
         
         if self.client_radio.isChecked():
             if client_level==0 or client_level==3:

@@ -10,7 +10,7 @@ import torch
 import select
 from dataclasses import asdict, dataclass
 from pprint import pformat
-from multiprocessing import Manager
+from multiprocessing import Manager,Queue,shared_memory
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.robot_devices.control_configs import (
@@ -40,6 +40,24 @@ shared_dict['server_level'] = manager.Value('i', NotStarted)
 #shm=shared_memory.SharedMemory(create=True, size=320*240*3*3)
 #totoImage=np.ndarray([240,320,3],dtype=np.uint8,buffer=shm.buf)
 
+totoImage=np.zeros((240, 960, 3), dtype=np.uint8)
+queue=Queue()
+def child_producer(shm, queue, image):
+    """子进程：生成图像并写入共享内存"""
+    # 模拟生成一张随机RGB图像（480x640x3）
+    #image = np.random.randint(0, 256, (480, 640, 3), dtype=np.uint8)
+    
+    # 创建共享内存并写入数据
+    shm_array = np.ndarray(totoImage.shape, dtype=totoImage.dtype, buffer=shm.buf)
+    np.copyto(shm_array, image)
+    
+    # 将共享内存名称和图像参数通过Queue传递给父进程
+    queue.put({
+        "name": shm.name,
+        "shape": image.shape,
+        "dtype": image.dtype
+    })
+    print("[子进程] 图像数据已写入共享内存，名称已发送")
 
 def producer(image, shared_dict):
     # 读取图像并转换为字节流   
@@ -61,7 +79,7 @@ def server_record(
     robot: FairinoRobot,
     cfg: ServerControlConfig,
 ) -> LeRobotDataset:
-    global shared_dict
+    global shared_dict,queue
     totolImage=np.zeros((240, 3*320,3),dtype=np.uint8) # aux only 
     """Server record mode that receives leader arm data from client and controls follower arms."""
     if not robot.is_connected:
@@ -75,6 +93,7 @@ def server_record(
     server_socket.setblocking(False)
     client_socket = None
     logging.info(f"Server listening on port {cfg.listen_port}")
+    shm = shared_memory.SharedMemory(create=True, size=totoImage.nbytes)
     
     try:
         listener, events = init_keyboard_listener()
@@ -195,7 +214,8 @@ def server_record(
                         
                         totolImage[:,x_offset:x_offset+width] = img[:,0:width]
                         x_offset += width
-                    producer(image=totolImage,shared_dict=shared_dict)
+                    child_producer(shm=shm, image=totolImage,queue=queue)
+                    #producer(image=totolImage,shared_dict=shared_dict)
                     action_dict = {"action": action}
                     frame = {**observation, **action_dict}
                     dataset.add_frame(frame)
