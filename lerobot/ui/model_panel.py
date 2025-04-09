@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QMessageBox,QPushButton,
     QTreeWidget, QTreeWidgetItem, QHBoxLayout, QFileDialog
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QTimer
 import os
 import sys
 import torch
@@ -15,10 +15,11 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.configs.default import DatasetConfig
 import multiprocessing
+from multiprocessing.shared_memory import ShareableList
 from lerobot.common.policies.act.configuration_act import ACTConfig
 
 from lerobot.common.utils.utils import init_logging
-
+from lerobot.scripts.baisic import *
 
 # to select
 current_policy:PreTrainedPolicy=None
@@ -30,6 +31,7 @@ model_name:str = "test"
 save_frequence:int =20000
 train_steps:int =100000
 
+share_train_info = ShareableList(["                                                                                              "])
 class ModelPanel(QWidget):
     model_loaded = pyqtSignal(str)  # Signal emitted when model is loaded
     current_data_name:str=None
@@ -42,6 +44,11 @@ class ModelPanel(QWidget):
         self.setup_connections()
         
     def setup_ui(self):
+
+        self.timer=QTimer(self)
+        self.timer.setInterval(1000)
+        self.timer.start()
+
         main_layout = QHBoxLayout()
         self.setLayout(main_layout)
         
@@ -134,6 +141,9 @@ class ModelPanel(QWidget):
         model_info.addWidget(self.model_details)
         main_layout.addWidget(right_panel,stretch=1)
 
+        self.train_info_label = QLabel(share_train_info[0])
+        
+        model_info.addWidget(self.train_info_label)
 
         self.refresh_datasets_dir()
         self.refresh_model_dir()
@@ -141,8 +151,12 @@ class ModelPanel(QWidget):
         self.add_button.setEnabled(False)
         self.load_button.setEnabled(False)
         self.train_button.setEnabled(False)
-      
+    
+    def _update_train_info(self):
+        self.train_info_label.setText(share_train_info[0])
+
     def setup_connections(self):
+        self.timer.timeout.connect(self._update_train_info)
         self.dataset_tree.itemDoubleClicked.connect(self.on_dataset_double_click)
         
         self.add_button.clicked.connect(self.handle_model_create)
@@ -208,18 +222,19 @@ class ModelPanel(QWidget):
         #    for data_item in os.listdir(current_data_path):
         #        QTreeWidgetItem(item, [data_item])
     
-    def create_model(self):
+    def create_model(self, shm):
         self.current_data_name = self.repo_id_input.toPlainText()
         model_name = self.mn_input.toPlainText()
         save_frequence = int(self.sf_input.toPlainText())
         train_steps=int(self.ts_input.toPlainText())
         train_with_config(repo_id=self.current_data_name, output_dir=models_dir+model_name,
-                          pretrained_path=None, train_steps=train_steps, save_freq=save_frequence)
+                          pretrained_path=None, train_steps=train_steps, save_freq=save_frequence, 
+                          shared_trin_info=shm)
         self.refresh_model_dir()
 
     def handle_model_create(self):
         #self.create_model()
-        self.process=multiprocessing.Process(target=self.create_model)
+        self.process=multiprocessing.Process(target=self.create_model, args=[share_train_info])
         self.process.start()
         #self.add_button.setEnabled(False)
         #cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=current_data_name))
@@ -311,7 +326,8 @@ class ModelPanel(QWidget):
                 output_dir=output_dir, \
                 pretrained_path=os.path.join(output_dir,'checkpoints/last/'), \
                     train_steps=int(self.ts_input.toPlainText()),\
-                        save_freq=int(self.sf_input.toPlainText()))
+                        save_freq=int(self.sf_input.toPlainText()),
+                        shared_trin_info=share_train_info)
             return True
             
         except Exception as e:

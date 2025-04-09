@@ -109,7 +109,7 @@ def update_policy(
 
 
 @parser.wrap()
-def train(cfg: TrainPipelineConfig):
+def train(cfg: TrainPipelineConfig, shared_trin_info = None):
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
 
@@ -228,6 +228,8 @@ def train(cfg: TrainPipelineConfig):
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.
         step += 1
+        if shared_trin_info :
+            shared_trin_info[0] = train_tracker.__str__()
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps
@@ -284,7 +286,8 @@ def train(cfg: TrainPipelineConfig):
         eval_env.close()
     logging.info("End of training")
 
-def train_with_config(repo_id: str, output_dir: str, pretrained_path: str | None = None, train_steps: int = 100000, save_freq: int = 2000 ):
+def train_with_config(repo_id: str, output_dir: str, pretrained_path: str | None = None, train_steps: int = 100000, save_freq: int = 2000,
+                      shared_trin_info = None):
     if pretrained_path==None :
         cfg=TrainPipelineConfig(dataset=DatasetConfig(repo_id=repo_id),
                             policy=ACTConfig(),
@@ -307,7 +310,7 @@ def train_with_config(repo_id: str, output_dir: str, pretrained_path: str | None
                                                       '--device=cuda'
                                                   })
         
-    train(cfg)
+    train(cfg, shared_trin_info)
 
 
 if __name__ == "__main__":
